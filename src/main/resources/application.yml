@@ -1,0 +1,8 @@
+server:
+  port: 8080
+
+mqtt:
+  host: ${MQTT_HOST:broker.emqx.io}
+  port: ${MQTT_PORT:1883}
+  username: ${MQTT_USERNAME:guest}
+  password: ${MQTT_PASSWORD:guest}
