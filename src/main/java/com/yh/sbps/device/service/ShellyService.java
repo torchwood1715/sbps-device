@@ -19,67 +19,80 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class ShellyService {
 
-    private static final Logger logger = LoggerFactory.getLogger(ShellyService.class);
+  private static final Logger logger = LoggerFactory.getLogger(ShellyService.class);
 
-    private final MqttPahoMessageHandler mqttOutbound;
-    private final ObjectMapper objectMapper;
-    private final Map<String, JsonNode> lastStatusMap = new ConcurrentHashMap<>();
+  private final MqttPahoMessageHandler mqttOutbound;
+  private final ObjectMapper objectMapper;
+  private final Map<String, JsonNode> lastStatusMap = new ConcurrentHashMap<>();
+  private final Map<String, Boolean> onlineMap = new ConcurrentHashMap<>();
+  private final Map<String, JsonNode> lastEventMap = new ConcurrentHashMap<>();
 
-    public ShellyService(MqttPahoClientFactory mqttClientFactory, ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+  public ShellyService(MqttPahoClientFactory mqttClientFactory, ObjectMapper objectMapper) {
+    this.objectMapper = objectMapper;
+    this.mqttOutbound = new MqttPahoMessageHandler("shellyOutbound", mqttClientFactory);
+    mqttOutbound.setAsync(false);
+    mqttOutbound.setConverter(new DefaultPahoMessageConverter());
+    mqttOutbound.afterPropertiesSet();
+  }
 
-        // Outbound handler
-        this.mqttOutbound = new MqttPahoMessageHandler("shellyOutbound", mqttClientFactory);
-        this.mqttOutbound.setAsync(false);
-        this.mqttOutbound.setConverter(new DefaultPahoMessageConverter());
-        this.mqttOutbound.afterPropertiesSet();
+  @ServiceActivator(inputChannel = "mqttInputChannel")
+  public void handleMqttMessage(Message<?> message) {
+    String topic = (String) message.getHeaders().get(MqttHeaders.RECEIVED_TOPIC);
+    String payload = String.valueOf(message.getPayload());
+    logger.info("MQTT IN: Topic={}, Payload={}", topic, payload);
+
+    try {
+      if (topic.endsWith("/online")) {
+        onlineMap.put(topic, Boolean.parseBoolean(payload));
+      } else if (topic.endsWith("/status/switch:0")) {
+        String plugId = topic.substring(0, topic.indexOf("/status"));
+        JsonNode json = objectMapper.readTree(payload);
+        lastStatusMap.put(plugId, json);
+      } else if (topic.endsWith("/events/rpc")) {
+        String plugId = topic.substring(0, topic.indexOf("/events"));
+        JsonNode json = objectMapper.readTree(payload);
+        lastEventMap.put(plugId, json);
+      }
+    } catch (Exception e) {
+      logger.error("Error parsing MQTT payload", e);
     }
+  }
 
-    public void sendCommand(String deviceId, boolean on) {
-        try {
-            var params = objectMapper.createObjectNode();
-            params.put("id", 0);
-            params.put("on", on);
+  public void sendCommand(String deviceId, boolean on) {
+    try {
+      var params = objectMapper.createObjectNode();
+      params.put("id", 0);
+      params.put("on", on);
 
-            var payload = objectMapper.createObjectNode();
-            payload.put("id", 1);
-            payload.put("src", "device_service");
-            payload.put("method", "Switch.Set");
-            payload.set("params", params);
+      var payload = objectMapper.createObjectNode();
+      payload.put("id", 1);
+      payload.put("src", "device_service");
+      payload.put("method", "Switch.Set");
+      payload.set("params", params);
 
-            String jsonPayload = objectMapper.writeValueAsString(payload);
-            Message<String> mqttMsg = MessageBuilder.withPayload(jsonPayload)
-                    .setHeader(MqttHeaders.TOPIC, deviceId + "/rpc")
-                    .build();
+      String jsonPayload = objectMapper.writeValueAsString(payload);
+      Message<String> mqttMsg =
+          MessageBuilder.withPayload(jsonPayload)
+              .setHeader(MqttHeaders.TOPIC, deviceId + "/rpc")
+              .build();
 
-            mqttOutbound.handleMessage(mqttMsg);
-            logger.info("Sent toggle {} to [{}]", on, deviceId);
+      mqttOutbound.handleMessage(mqttMsg);
+      logger.info("Sent toggle {} to [{}]", on, deviceId);
 
-        } catch (Exception e) {
-            logger.error("Error sending MQTT command", e);
-        }
+    } catch (Exception e) {
+      logger.error("Error sending MQTT command", e);
     }
+  }
 
-    public JsonNode getLastStatus(String plugId) {
-        return lastStatusMap.get(plugId);
-    }
+  public JsonNode getLastStatus(String plugId) {
+    return lastStatusMap.get(plugId);
+  }
 
-    @ServiceActivator(inputChannel = "mqttInputChannel")
-    public void handleMqttMessage(Message<?> message) {
-        String topic = (String) message.getHeaders().get(MqttHeaders.RECEIVED_TOPIC);
-        String payload = (String) message.getPayload();
+  public Boolean isOnline(String plugId) {
+    return onlineMap.get(plugId + "/online");
+  }
 
-        logger.debug("MQTT on [{}]: {}", topic, payload);
-
-        if (topic != null && topic.endsWith("/status")) {
-            String plugId = topic.substring(0, topic.indexOf("/status"));
-            try {
-                JsonNode json = objectMapper.readTree(payload);
-                lastStatusMap.put(plugId, json);
-                logger.info("Updated status for [{}]", plugId);
-            } catch (Exception e) {
-                logger.error("Error parsing status payload", e);
-            }
-        }
-    }
+  public JsonNode getLastEvent(String plugId) {
+    return lastEventMap.get(plugId);
+  }
 }

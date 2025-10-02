@@ -14,46 +14,51 @@ import org.springframework.messaging.MessageChannel;
 @Configuration
 public class MqttConfig {
 
-    @Value("${mqtt.host}")
-    private String host;
+  @Value("${mqtt.host}")
+  private String host;
 
-    @Value("${mqtt.port}")
-    private int port;
+  @Value("${mqtt.port}")
+  private int port;
 
-    @Value("${mqtt.username}")
-    private String username;
+  @Value("${mqtt.username}")
+  private String username;
 
-    @Value("${mqtt.password}")
-    private String password;
+  @Value("${mqtt.password}")
+  private String password;
 
-    @Bean
-    public MqttPahoClientFactory mqttClientFactory() {
-        DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
+  @Bean
+  public MqttPahoClientFactory mqttClientFactory() {
+    DefaultMqttPahoClientFactory factory = new DefaultMqttPahoClientFactory();
 
-        MqttConnectOptions options = new MqttConnectOptions();
-        options.setServerURIs(new String[]{"ssl://" + host + ":" + port});
-        options.setUserName(username);
-        options.setPassword(password.toCharArray());
-        options.setAutomaticReconnect(true);
-        options.setCleanSession(true);
+    MqttConnectOptions options = new MqttConnectOptions();
+    options.setServerURIs(new String[] {"ssl://" + host + ":" + port});
+    options.setUserName(username);
+    options.setPassword(password.toCharArray());
+    options.setAutomaticReconnect(true);
+    options.setCleanSession(true);
 
-        factory.setConnectionOptions(options);
-        return factory;
-    }
+    factory.setConnectionOptions(options);
+    return factory;
+  }
 
-    @Bean
-    public MessageChannel mqttInputChannel() {
-        return new DirectChannel();
-    }
+  @Bean
+  public MessageChannel mqttInputChannel() {
+    return new DirectChannel();
+  }
 
-    @Bean
-    public MqttPahoMessageDrivenChannelAdapter inbound(MqttPahoClientFactory mqttClientFactory) {
-        MqttPahoMessageDrivenChannelAdapter adapter =
-                new MqttPahoMessageDrivenChannelAdapter("shellyInbound", mqttClientFactory, "#");
-        adapter.setCompletionTimeout(5000);
-        adapter.setConverter(new DefaultPahoMessageConverter());
-        adapter.setQos(1);
-        adapter.setOutputChannel(mqttInputChannel());
-        return adapter;
-    }
+  @Bean
+  public MqttPahoMessageDrivenChannelAdapter inbound(MqttPahoClientFactory mqttClientFactory) {
+    MqttPahoMessageDrivenChannelAdapter adapter =
+        new MqttPahoMessageDrivenChannelAdapter(
+            "shellyInbound",
+            mqttClientFactory,
+            "shelly_1/online",
+            "shelly_1/events/rpc",
+            "shelly_1/status/switch:0");
+    adapter.setCompletionTimeout(5000);
+    adapter.setConverter(new DefaultPahoMessageConverter());
+    adapter.setQos(1);
+    adapter.setOutputChannel(mqttInputChannel());
+    return adapter;
+  }
 }

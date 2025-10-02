@@ -9,24 +9,42 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/device")
 public class DeviceController {
 
-    private final ShellyService shellyService;
+  private final ShellyService shellyService;
 
-    public DeviceController(ShellyService shellyService) {
-        this.shellyService = shellyService;
-    }
+  public DeviceController(ShellyService shellyService) {
+    this.shellyService = shellyService;
+  }
 
-    @PostMapping("/{plugId}/toggle")
-    public String togglePlug(@PathVariable String plugId, @RequestParam boolean on) {
-        shellyService.sendCommand(plugId, on);
-        return "Plug [" + plugId + "] toggled " + (on ? "ON" : "OFF");
-    }
+  @PostMapping("/{plugId}/toggle")
+  public String togglePlug(@PathVariable String plugId, @RequestParam boolean on) {
+    shellyService.sendCommand(plugId, on);
+    return "Plug [" + plugId + "] toggled " + (on ? "ON" : "OFF");
+  }
 
-    @GetMapping("/{plugId}/status")
-    public ResponseEntity<JsonNode> getStatus(@PathVariable String plugId) {
-        JsonNode status = shellyService.getLastStatus(plugId);
-        if (status == null) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(status);
+  @GetMapping("/{plugId}/status")
+  public ResponseEntity<JsonNode> getStatus(@PathVariable String plugId) {
+    JsonNode status = shellyService.getLastStatus(plugId);
+    if (status == null) {
+      return ResponseEntity.notFound().build();
     }
+    return ResponseEntity.ok(status);
+  }
+
+  @GetMapping("/{plugId}/online")
+  public ResponseEntity<Boolean> getOnline(@PathVariable String plugId) {
+    Boolean online = shellyService.isOnline(plugId);
+    if (online == null) {
+      return ResponseEntity.notFound().build();
+    }
+    return ResponseEntity.ok(online);
+  }
+
+  @GetMapping("/{plugId}/events")
+  public ResponseEntity<JsonNode> getEvents(@PathVariable String plugId) {
+    JsonNode event = shellyService.getLastEvent(plugId);
+    if (event == null) {
+      return ResponseEntity.notFound().build();
+    }
+    return ResponseEntity.ok(event);
+  }
 }
