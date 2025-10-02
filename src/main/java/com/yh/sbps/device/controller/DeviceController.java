@@ -1,7 +1,12 @@
 package com.yh.sbps.device.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.service.ShellyService;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,16 +14,45 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/device")
 public class DeviceController {
 
-  private final ShellyService shellyService;
+  private static final Logger logger = LoggerFactory.getLogger(DeviceController.class);
 
-  public DeviceController(ShellyService shellyService) {
+  private final ShellyService shellyService;
+  private final ApiServiceClient apiServiceClient;
+
+  public DeviceController(ShellyService shellyService, ApiServiceClient apiServiceClient) {
     this.shellyService = shellyService;
+    this.apiServiceClient = apiServiceClient;
   }
 
-  @PostMapping("/{plugId}/toggle")
-  public String togglePlug(@PathVariable String plugId, @RequestParam boolean on) {
-    shellyService.sendCommand(plugId, on);
-    return "Plug [" + plugId + "] toggled " + (on ? "ON" : "OFF");
+  @PostMapping("/plug/{deviceId}/toggle")
+  public ResponseEntity<String> togglePlug(@PathVariable Long deviceId, @RequestParam boolean on) {
+    try {
+      Optional<DeviceDto> deviceOpt = apiServiceClient.getDeviceById(deviceId);
+
+      if (deviceOpt.isEmpty()) {
+        logger.warn("Device with ID {} not found", deviceId);
+        return ResponseEntity.notFound().build();
+      }
+
+      DeviceDto device = deviceOpt.get();
+      if (device.getMqttPrefix() == null || device.getMqttPrefix().isEmpty()) {
+        logger.error("Device {} has no MQTT prefix", device.getName());
+        return ResponseEntity.badRequest().body("Device has no MQTT prefix configured");
+      }
+
+      shellyService.sendCommand(device.getMqttPrefix(), on);
+      logger.info(
+          "Toggled device {} ({}) to {}",
+          device.getName(),
+          device.getMqttPrefix(),
+          on ? "ON" : "OFF");
+
+      return ResponseEntity.ok("Device [" + device.getName() + "] toggled " + (on ? "ON" : "OFF"));
+
+    } catch (Exception e) {
+      logger.error("Error toggling device {}", deviceId, e);
+      return ResponseEntity.internalServerError().body("Error toggling device");
+    }
   }
 
   @GetMapping("/{plugId}/status")

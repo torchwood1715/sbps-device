@@ -2,19 +2,22 @@ package com.yh.sbps.device.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yh.sbps.device.dto.DeviceDto;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.mqtt.core.MqttPahoClientFactory;
+import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannelAdapter;
 import org.springframework.integration.mqtt.outbound.MqttPahoMessageHandler;
 import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.integration.mqtt.support.MqttHeaders;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
-
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class ShellyService {
@@ -22,12 +25,20 @@ public class ShellyService {
   private static final Logger logger = LoggerFactory.getLogger(ShellyService.class);
 
   private final MqttPahoMessageHandler mqttOutbound;
+  private final MqttPahoClientFactory mqttClientFactory;
+  private final MessageChannel mqttInputChannel;
   private final ObjectMapper objectMapper;
   private final Map<String, JsonNode> lastStatusMap = new ConcurrentHashMap<>();
   private final Map<String, Boolean> onlineMap = new ConcurrentHashMap<>();
   private final Map<String, JsonNode> lastEventMap = new ConcurrentHashMap<>();
+  private final Set<String> subscribedDevices = ConcurrentHashMap.newKeySet();
 
-  public ShellyService(MqttPahoClientFactory mqttClientFactory, ObjectMapper objectMapper) {
+  public ShellyService(
+      MqttPahoClientFactory mqttClientFactory,
+      MessageChannel mqttInputChannel,
+      ObjectMapper objectMapper) {
+    this.mqttClientFactory = mqttClientFactory;
+    this.mqttInputChannel = mqttInputChannel;
     this.objectMapper = objectMapper;
     this.mqttOutbound = new MqttPahoMessageHandler("shellyOutbound", mqttClientFactory);
     mqttOutbound.setAsync(false);
@@ -94,5 +105,48 @@ public class ShellyService {
 
   public JsonNode getLastEvent(String plugId) {
     return lastEventMap.get(plugId);
+  }
+
+  public void subscribeForDevice(DeviceDto device) {
+    if (device.getMqttPrefix() == null || device.getMqttPrefix().isEmpty()) {
+      logger.warn("Device {} has no MQTT prefix, skipping subscription", device.getName());
+      return;
+    }
+
+    String deviceKey = device.getMqttPrefix();
+    if (subscribedDevices.contains(deviceKey)) {
+      logger.debug("Device {} is already subscribed, skipping", device.getName());
+      return;
+    }
+
+    try {
+      String[] topics = {
+        device.getMqttPrefix() + "/online",
+        device.getMqttPrefix() + "/events/rpc",
+        device.getMqttPrefix() + "/status/switch:0"
+      };
+
+      MqttPahoMessageDrivenChannelAdapter adapter =
+          new MqttPahoMessageDrivenChannelAdapter(
+              "shellyInbound_" + device.getId(), mqttClientFactory, topics);
+      adapter.setCompletionTimeout(5000);
+      adapter.setConverter(new DefaultPahoMessageConverter());
+      adapter.setQos(1);
+      adapter.setOutputChannel(mqttInputChannel);
+      adapter.start();
+
+      subscribedDevices.add(deviceKey);
+      logger.info(
+          "Subscribed to MQTT topics for device: {} ({})",
+          device.getName(),
+          device.getMqttPrefix());
+
+    } catch (Exception e) {
+      logger.error(
+          "Failed to subscribe to MQTT topics for device: {} ({})",
+          device.getName(),
+          device.getMqttPrefix(),
+          e);
+    }
   }
 }
