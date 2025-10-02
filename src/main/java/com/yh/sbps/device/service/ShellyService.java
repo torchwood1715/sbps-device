@@ -3,6 +3,8 @@ package com.yh.sbps.device.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.integration.ApiServiceClient;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,18 +30,22 @@ public class ShellyService {
   private final MqttPahoClientFactory mqttClientFactory;
   private final MessageChannel mqttInputChannel;
   private final ObjectMapper objectMapper;
-  private final Map<String, JsonNode> lastStatusMap = new ConcurrentHashMap<>();
-  private final Map<String, Boolean> onlineMap = new ConcurrentHashMap<>();
-  private final Map<String, JsonNode> lastEventMap = new ConcurrentHashMap<>();
+  private final DeviceStatusService deviceStatusService;
+  private final ApiServiceClient apiServiceClient;
   private final Set<String> subscribedDevices = ConcurrentHashMap.newKeySet();
+  private final Map<String, Long> mqttPrefixToDeviceIdMap = new ConcurrentHashMap<>();
 
   public ShellyService(
       MqttPahoClientFactory mqttClientFactory,
       MessageChannel mqttInputChannel,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      DeviceStatusService deviceStatusService,
+      ApiServiceClient apiServiceClient) {
     this.mqttClientFactory = mqttClientFactory;
     this.mqttInputChannel = mqttInputChannel;
     this.objectMapper = objectMapper;
+    this.deviceStatusService = deviceStatusService;
+    this.apiServiceClient = apiServiceClient;
     this.mqttOutbound = new MqttPahoMessageHandler("shellyOutbound", mqttClientFactory);
     mqttOutbound.setAsync(false);
     mqttOutbound.setConverter(new DefaultPahoMessageConverter());
@@ -54,19 +60,54 @@ public class ShellyService {
 
     try {
       if (topic.endsWith("/online")) {
-        onlineMap.put(topic, Boolean.parseBoolean(payload));
+        String mqttPrefix = topic.substring(0, topic.lastIndexOf("/online"));
+        boolean online = Boolean.parseBoolean(payload);
+        Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
+        if (deviceId != null) {
+          deviceStatusService.updateOnline(deviceId, online, mqttPrefix);
+        }
       } else if (topic.endsWith("/status/switch:0")) {
-        String plugId = topic.substring(0, topic.indexOf("/status"));
+        String mqttPrefix = topic.substring(0, topic.indexOf("/status"));
         JsonNode json = objectMapper.readTree(payload);
-        lastStatusMap.put(plugId, json);
+        Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
+        if (deviceId != null) {
+          deviceStatusService.updateStatus(deviceId, json, mqttPrefix);
+        }
       } else if (topic.endsWith("/events/rpc")) {
-        String plugId = topic.substring(0, topic.indexOf("/events"));
+        String mqttPrefix = topic.substring(0, topic.indexOf("/events"));
         JsonNode json = objectMapper.readTree(payload);
-        lastEventMap.put(plugId, json);
+        Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
+        if (deviceId != null) {
+          deviceStatusService.updateEvent(deviceId, json, mqttPrefix);
+        }
       }
     } catch (Exception e) {
       logger.error("Error parsing MQTT payload", e);
     }
+  }
+
+  private Long getDeviceIdByMqttPrefix(String mqttPrefix) {
+    // Check cache first
+    Long deviceId = mqttPrefixToDeviceIdMap.get(mqttPrefix);
+    if (deviceId != null) {
+      return deviceId;
+    }
+
+    // If not in the cache, search through all devices
+    try {
+      List<DeviceDto> devices = apiServiceClient.getAllDevices();
+      for (DeviceDto device : devices) {
+        if (mqttPrefix.equals(device.getMqttPrefix())) {
+          mqttPrefixToDeviceIdMap.put(mqttPrefix, device.getId());
+          return device.getId();
+        }
+      }
+    } catch (Exception e) {
+      logger.error("Error finding device by MQTT prefix: {}", mqttPrefix, e);
+    }
+    
+    logger.warn("No device found for MQTT prefix: {}", mqttPrefix);
+    return null;
   }
 
   public void sendCommand(String deviceId, boolean on) {
@@ -93,18 +134,6 @@ public class ShellyService {
     } catch (Exception e) {
       logger.error("Error sending MQTT command", e);
     }
-  }
-
-  public JsonNode getLastStatus(String plugId) {
-    return lastStatusMap.get(plugId);
-  }
-
-  public Boolean isOnline(String plugId) {
-    return onlineMap.get(plugId + "/online");
-  }
-
-  public JsonNode getLastEvent(String plugId) {
-    return lastEventMap.get(plugId);
   }
 
   public void subscribeForDevice(DeviceDto device) {

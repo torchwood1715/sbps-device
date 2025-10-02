@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-device-status-table
+      author: system
+      changes:
+        - createTable:
+            tableName: device_status
+            columns:
+              - column:
+                  name: device_id
+                  type: BIGINT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: mqtt_prefix
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: true
+              - column:
+                  name: last_status_json
+                  type: CLOB
+                  constraints:
+                    nullable: true
+              - column:
+                  name: last_online
+                  type: BOOLEAN
+                  constraints:
+                    nullable: true
+              - column:
+                  name: last_event_json
+                  type: CLOB
+                  constraints:
+                    nullable: true
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: true

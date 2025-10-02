@@ -3,6 +3,7 @@ package com.yh.sbps.device.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.yh.sbps.device.dto.DeviceDto;
 import com.yh.sbps.device.integration.ApiServiceClient;
+import com.yh.sbps.device.service.DeviceStatusService;
 import com.yh.sbps.device.service.ShellyService;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -18,10 +19,12 @@ public class DeviceController {
 
   private final ShellyService shellyService;
   private final ApiServiceClient apiServiceClient;
+  private final DeviceStatusService deviceStatusService;
 
-  public DeviceController(ShellyService shellyService, ApiServiceClient apiServiceClient) {
+  public DeviceController(ShellyService shellyService, ApiServiceClient apiServiceClient, DeviceStatusService deviceStatusService) {
     this.shellyService = shellyService;
     this.apiServiceClient = apiServiceClient;
+    this.deviceStatusService = deviceStatusService;
   }
 
   @PostMapping("/plug/{deviceId}/toggle")
@@ -55,27 +58,27 @@ public class DeviceController {
     }
   }
 
-  @GetMapping("/{plugId}/status")
-  public ResponseEntity<JsonNode> getStatus(@PathVariable String plugId) {
-    JsonNode status = shellyService.getLastStatus(plugId);
+  @GetMapping("/plug/{deviceId}/status")
+  public ResponseEntity<JsonNode> getStatus(@PathVariable Long deviceId) {
+    JsonNode status = deviceStatusService.getStatusAsJsonNode(deviceId);
     if (status == null) {
       return ResponseEntity.notFound().build();
     }
     return ResponseEntity.ok(status);
   }
 
-  @GetMapping("/{plugId}/online")
-  public ResponseEntity<Boolean> getOnline(@PathVariable String plugId) {
-    Boolean online = shellyService.isOnline(plugId);
+  @GetMapping("/plug/{deviceId}/online")
+  public ResponseEntity<Boolean> getOnline(@PathVariable Long deviceId) {
+    Boolean online = deviceStatusService.getOnlineStatus(deviceId);
     if (online == null) {
       return ResponseEntity.notFound().build();
     }
     return ResponseEntity.ok(online);
   }
 
-  @GetMapping("/{plugId}/events")
-  public ResponseEntity<JsonNode> getEvents(@PathVariable String plugId) {
-    JsonNode event = shellyService.getLastEvent(plugId);
+  @GetMapping("/plug/{deviceId}/events")
+  public ResponseEntity<JsonNode> getEvents(@PathVariable Long deviceId) {
+    JsonNode event = deviceStatusService.getEventAsJsonNode(deviceId);
     if (event == null) {
       return ResponseEntity.notFound().build();
     }
