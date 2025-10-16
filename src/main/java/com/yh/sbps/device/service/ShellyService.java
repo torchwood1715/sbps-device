@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 public class ShellyService {
 
   private static final Logger logger = LoggerFactory.getLogger(ShellyService.class);
+  private static final String DEVICE_TYPE_POWER_MONITOR = "POWER_MONITOR";
 
   private final MqttPahoMessageHandler mqttOutbound;
   private final MqttPahoClientFactory mqttClientFactory;
@@ -34,6 +35,8 @@ public class ShellyService {
   private final ApiServiceClient apiServiceClient;
   private final Set<String> subscribedDevices = ConcurrentHashMap.newKeySet();
   private final Map<String, Long> mqttPrefixToDeviceIdMap = new ConcurrentHashMap<>();
+  private final Map<String, DeviceDto> deviceCache = new ConcurrentHashMap<>();
+  private BalancingService balancingService; // Lazy injection to avoid circular dependency
 
   public ShellyService(
       MqttPahoClientFactory mqttClientFactory,
@@ -50,6 +53,14 @@ public class ShellyService {
     mqttOutbound.setAsync(false);
     mqttOutbound.setConverter(new DefaultPahoMessageConverter());
     mqttOutbound.afterPropertiesSet();
+  }
+
+  /**
+   * Setter for BalancingService to avoid circular dependency. Spring will inject this after
+   * construction.
+   */
+  public void setBalancingService(BalancingService balancingService) {
+    this.balancingService = balancingService;
   }
 
   @ServiceActivator(inputChannel = "mqttInputChannel")
@@ -72,6 +83,19 @@ public class ShellyService {
         Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
         if (deviceId != null) {
           deviceStatusService.updateStatus(deviceId, json, mqttPrefix);
+
+          // Check if this is a POWER_MONITOR device and trigger balancing logic
+          DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
+          if (device != null && DEVICE_TYPE_POWER_MONITOR.equals(device.getType())) {
+            logger.info(
+                "Power monitor device '{}' reported status. Triggering balancing logic.",
+                device.getName());
+            if (balancingService != null) {
+              balancingService.balancePower(mqttPrefix, json);
+            } else {
+              logger.warn("BalancingService not initialized. Cannot perform power balancing.");
+            }
+          }
         }
       } else if (topic.endsWith("/events/rpc")) {
         String mqttPrefix = topic.substring(0, topic.indexOf("/events"));
@@ -99,7 +123,39 @@ public class ShellyService {
       for (DeviceDto device : devices) {
         if (mqttPrefix.equals(device.getMqttPrefix())) {
           mqttPrefixToDeviceIdMap.put(mqttPrefix, device.getId());
+          deviceCache.put(mqttPrefix, device); // Also cache the full device object
           return device.getId();
+        }
+      }
+    } catch (Exception e) {
+      logger.error("Error finding device by MQTT prefix: {}", mqttPrefix, e);
+    }
+
+    logger.warn("No device found for MQTT prefix: {}", mqttPrefix);
+    return null;
+  }
+
+  /**
+   * Gets the full DeviceDto by MQTT prefix. Uses cache for efficiency.
+   *
+   * @param mqttPrefix The MQTT prefix
+   * @return DeviceDto or null if not found
+   */
+  private DeviceDto getDeviceByMqttPrefix(String mqttPrefix) {
+    // Check cache first
+    DeviceDto device = deviceCache.get(mqttPrefix);
+    if (device != null) {
+      return device;
+    }
+
+    // If not in cache, search through all devices
+    try {
+      List<DeviceDto> devices = apiServiceClient.getAllDevices();
+      for (DeviceDto dev : devices) {
+        if (mqttPrefix.equals(dev.getMqttPrefix())) {
+          deviceCache.put(mqttPrefix, dev);
+          mqttPrefixToDeviceIdMap.put(mqttPrefix, dev.getId());
+          return dev;
         }
       }
     } catch (Exception e) {

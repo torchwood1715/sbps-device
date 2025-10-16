@@ -17,6 +17,10 @@ spring:
 api:
   base-url: ${API_BASE_URL:http://localhost:8080}
 
+service-user:
+  email: ${SERVICE_USER_EMAIL:service-user@example.com}
+  password: ${SERVICE_USER_PASSWORD:strongpassword}
+
 mqtt:
   host: ${MQTT_HOST:broker.emqx.io}
   port: ${MQTT_PORT:1883}
