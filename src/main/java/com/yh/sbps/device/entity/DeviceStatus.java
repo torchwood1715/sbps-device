@@ -1,10 +1,10 @@
 package com.yh.sbps.device.entity;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "device_status")
@@ -13,30 +13,30 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class DeviceStatus {
 
-    @Id
-    @Column(name = "device_id")
-    private Long deviceId;
+  @Id
+  @Column(name = "device_id")
+  private Long deviceId;
 
-    @Column(name = "mqtt_prefix")
-    private String mqttPrefix;
+  @Column(name = "mqtt_prefix")
+  private String mqttPrefix;
 
-    @Lob
-    @Column(name = "last_status_json")
-    private String lastStatusJson;
+  @Lob
+  @Column(name = "last_status_json")
+  private String lastStatusJson;
 
-    @Column(name = "last_online")
-    private Boolean lastOnline;
+  @Column(name = "last_online")
+  private Boolean lastOnline;
 
-    @Lob
-    @Column(name = "last_event_json")
-    private String lastEventJson;
+  @Lob
+  @Column(name = "last_event_json")
+  private String lastEventJson;
 
-    @Column(name = "updated_at")
-    private LocalDateTime updatedAt;
+  @Column(name = "updated_at")
+  private LocalDateTime updatedAt;
 
-    @PrePersist
-    @PreUpdate
-    public void updateTimestamp() {
-        this.updatedAt = LocalDateTime.now();
-    }
+  @PrePersist
+  @PreUpdate
+  public void updateTimestamp() {
+    this.updatedAt = LocalDateTime.now();
+  }
 }

@@ -21,7 +21,10 @@ public class DeviceController {
   private final ApiServiceClient apiServiceClient;
   private final DeviceStatusService deviceStatusService;
 
-  public DeviceController(ShellyService shellyService, ApiServiceClient apiServiceClient, DeviceStatusService deviceStatusService) {
+  public DeviceController(
+      ShellyService shellyService,
+      ApiServiceClient apiServiceClient,
+      DeviceStatusService deviceStatusService) {
     this.shellyService = shellyService;
     this.apiServiceClient = apiServiceClient;
     this.deviceStatusService = deviceStatusService;

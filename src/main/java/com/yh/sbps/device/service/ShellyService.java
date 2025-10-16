@@ -105,7 +105,7 @@ public class ShellyService {
     } catch (Exception e) {
       logger.error("Error finding device by MQTT prefix: {}", mqttPrefix, e);
     }
-    
+
     logger.warn("No device found for MQTT prefix: {}", mqttPrefix);
     return null;
   }

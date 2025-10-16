@@ -1,45 +1,20 @@
 package com.yh.sbps.device.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 
 @Setter
 @Getter
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString
 public class DeviceDto {
   private Long id;
   private String name;
+
   @JsonProperty("mqtt_prefix")
   private String mqttPrefix;
+
   private String type;
   private Integer priority;
-
-  public DeviceDto() {}
-
-  public DeviceDto(Long id, String name, String mqttPrefix, String type, Integer priority) {
-    this.id = id;
-    this.name = name;
-    this.mqttPrefix = mqttPrefix;
-    this.type = type;
-    this.priority = priority;
-  }
-
-  @Override
-  public String toString() {
-    return "DeviceDto{"
-        + "id="
-        + id
-        + ", name='"
-        + name
-        + '\''
-        + ", mqttPrefix='"
-        + mqttPrefix
-        + '\''
-        + ", type='"
-        + type
-        + '\''
-        + ", priority="
-        + priority
-        + '}';
-  }
 }
