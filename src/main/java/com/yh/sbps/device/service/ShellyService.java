@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.integration.annotation.ServiceActivator;
@@ -36,7 +38,12 @@ public class ShellyService {
   private final Set<String> subscribedDevices = ConcurrentHashMap.newKeySet();
   private final Map<String, Long> mqttPrefixToDeviceIdMap = new ConcurrentHashMap<>();
   private final Map<String, DeviceDto> deviceCache = new ConcurrentHashMap<>();
-  private BalancingService balancingService; // Lazy injection to avoid circular dependency
+
+  /**
+   * -- SETTER -- Setter for BalancingService to avoid circular dependency. Spring will inject this
+   * after construction.
+   */
+  @Setter private BalancingService balancingService; // Lazy injection to avoid circular dependency
 
   public ShellyService(
       MqttPahoClientFactory mqttClientFactory,
@@ -53,14 +60,6 @@ public class ShellyService {
     mqttOutbound.setAsync(false);
     mqttOutbound.setConverter(new DefaultPahoMessageConverter());
     mqttOutbound.afterPropertiesSet();
-  }
-
-  /**
-   * Setter for BalancingService to avoid circular dependency. Spring will inject this after
-   * construction.
-   */
-  public void setBalancingService(BalancingService balancingService) {
-    this.balancingService = balancingService;
   }
 
   @ServiceActivator(inputChannel = "mqttInputChannel")
