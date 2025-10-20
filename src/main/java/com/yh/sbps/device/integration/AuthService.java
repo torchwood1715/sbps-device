@@ -2,6 +2,7 @@ package com.yh.sbps.device.integration;
 
 import com.yh.sbps.device.dto.LoginRequestDto;
 import com.yh.sbps.device.dto.LoginResponseDto;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +10,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -28,7 +30,10 @@ public class AuthService {
       @Value("${api.base-url}") String baseUrl,
       @Value("${service-user.email}") String serviceUserEmail,
       @Value("${service-user.password}") String serviceUserPassword) {
-    this.restTemplate = new RestTemplate();
+    SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+    factory.setConnectTimeout((int) TimeUnit.SECONDS.toMillis(5));
+    factory.setReadTimeout((int) TimeUnit.SECONDS.toMillis(5));
+    this.restTemplate = new RestTemplate(factory);
     this.baseUrl = baseUrl;
     this.serviceUserEmail = serviceUserEmail;
     this.serviceUserPassword = serviceUserPassword;
@@ -36,41 +41,53 @@ public class AuthService {
   }
 
   /**
-   * Authenticates with the sbps-api and obtains a JWT token for the SERVICE_USER.
+   * Authenticates with the sbps-api and gets a JWT token for the SERVICE_USER.
    *
    * @return JWT token
    */
   private String login() {
-    try {
-      logger.debug("Attempting to login as SERVICE_USER: {}", serviceUserEmail);
-      String url = baseUrl + "/api/auth/login";
 
-      LoginRequestDto loginRequest = new LoginRequestDto(serviceUserEmail, serviceUserPassword);
+    int maxRetries = 3;
+    long retryDelayMillis = TimeUnit.SECONDS.toMillis(20);
 
-      HttpHeaders headers = new HttpHeaders();
-      headers.setContentType(MediaType.APPLICATION_JSON);
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.info("Attempting login (attempt {}/{}) to {}", attempt, maxRetries, baseUrl);
+        String url = baseUrl + "/api/auth/login";
 
-      HttpEntity<LoginRequestDto> request = new HttpEntity<>(loginRequest, headers);
+        LoginRequestDto loginRequest = new LoginRequestDto(serviceUserEmail, serviceUserPassword);
 
-      ResponseEntity<LoginResponseDto> response =
-          restTemplate.postForEntity(url, request, LoginResponseDto.class);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
-      if (response.getBody() != null && response.getBody().getToken() != null) {
-        logger.info("Successfully authenticated as SERVICE_USER");
-        return response.getBody().getToken();
-      } else {
-        logger.error("Login response body or token is null");
+        HttpEntity<LoginRequestDto> request = new HttpEntity<>(loginRequest, headers);
+
+        ResponseEntity<LoginResponseDto> response =
+            restTemplate.postForEntity(url, request, LoginResponseDto.class);
+
+        if (response.getBody() != null && response.getBody().getToken() != null) {
+          logger.info("Successfully authenticated as SERVICE_USER on attempt {}", attempt);
+          return response.getBody().getToken();
+        } else {
+          logger.error("Login response body or token is null on attempt {}", attempt);
+        }
+        try {
+          Thread.sleep(retryDelayMillis);
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
+          logger.error("Retry delay interrupted", ie);
+          return null;
+        }
+      } catch (Exception e) {
+        logger.error("Unexpected error during login attempt {}", attempt, e);
         return null;
       }
-
-    } catch (Exception e) {
-      logger.error("Error during SERVICE_USER authentication", e);
-      return null;
     }
+    return null;
   }
 
   /**
-   * Returns the stored JWT token. If the token is null, it attempts to login first.
+   * Returns the stored JWT token. If the token is null, it attempts to log in first.
    *
    * @return JWT token or null if authentication fails
    */
