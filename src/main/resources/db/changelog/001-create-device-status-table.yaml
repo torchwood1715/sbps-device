@@ -33,6 +33,12 @@ databaseChangeLog:
                   constraints:
                     nullable: true
               - column:
+                  name: control_state
+                  type: VARCHAR(50)
+                  defaultValue: ENABLED
+                  constraints:
+                    nullable: true
+              - column:
                   name: updated_at
                   type: TIMESTAMP
                   constraints:

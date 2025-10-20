@@ -26,3 +26,8 @@ mqtt:
   port: ${MQTT_PORT:1883}
   username: ${MQTT_USERNAME:guest}
   password: ${MQTT_PASSWORD:guest}
+
+logging:
+  level:
+    root: WARN
+    com.yh.sbps: INFO

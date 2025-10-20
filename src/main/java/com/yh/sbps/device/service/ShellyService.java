@@ -8,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,7 +65,7 @@ public class ShellyService {
   public void handleMqttMessage(Message<?> message) {
     String topic = (String) message.getHeaders().get(MqttHeaders.RECEIVED_TOPIC);
     String payload = String.valueOf(message.getPayload());
-    logger.info("MQTT IN: Topic={}, Payload={}", topic, payload);
+    logger.debug("MQTT IN: Topic={}, Payload={}", topic, payload);
 
     try {
       if (topic.endsWith("/online")) {
@@ -85,8 +84,8 @@ public class ShellyService {
 
           // Check if this is a POWER_MONITOR device and trigger balancing logic
           DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
-          if (device != null && DEVICE_TYPE_POWER_MONITOR.equals(device.getType())) {
-            logger.info(
+          if (device != null && DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
+            logger.debug(
                 "Power monitor device '{}' reported status. Triggering balancing logic.",
                 device.getName());
             if (balancingService != null) {

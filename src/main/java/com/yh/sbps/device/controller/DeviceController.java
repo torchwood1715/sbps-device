@@ -2,6 +2,7 @@ package com.yh.sbps.device.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.service.DeviceStatusService;
 import com.yh.sbps.device.service.ShellyService;
@@ -30,6 +31,18 @@ public class DeviceController {
     this.deviceStatusService = deviceStatusService;
   }
 
+  @PostMapping("/internal/subscribe")
+  public ResponseEntity<Void> subscribeDevice(@RequestBody DeviceDto device) {
+    try {
+      shellyService.subscribeForDevice(device);
+      logger.info("Subscribed to device topics via internal API call: {}", device.getName());
+      return ResponseEntity.ok().build();
+    } catch (Exception e) {
+      logger.error("Failed to subscribe to device via internal API call: {}", device.getName(), e);
+      return ResponseEntity.internalServerError().build();
+    }
+  }
+
   @PostMapping("/plug/{deviceId}/toggle")
   public ResponseEntity<String> togglePlug(@PathVariable Long deviceId, @RequestParam boolean on) {
     try {
@@ -46,17 +59,26 @@ public class DeviceController {
         return ResponseEntity.badRequest().body("Device has no MQTT prefix configured");
       }
 
+      // Send command to a device
       shellyService.sendCommand(device.getMqttPrefix(), on);
+
+      // Update control state based on user action
+      DeviceControlState newState =
+          on ? DeviceControlState.ENABLED : DeviceControlState.DISABLED_BY_USER;
+      deviceStatusService.updateControlState(deviceId, newState);
+
       logger.info(
-          "Toggled device {} ({}) to {}",
+          "User toggled device {} ({}) to {} with control state: {}",
           device.getName(),
           device.getMqttPrefix(),
-          on ? "ON" : "OFF");
+          on ? "ON" : "OFF",
+          newState);
 
-      return ResponseEntity.ok("Device [" + device.getName() + "] toggled " + (on ? "ON" : "OFF"));
+      return ResponseEntity.ok(
+          "Device [" + device.getName() + "] toggled " + (on ? "ON" : "OFF") + " by user");
 
     } catch (Exception e) {
-      logger.error("Error toggling device {}", deviceId, e);
+      logger.error("Error user-toggling device {}", deviceId, e);
       return ResponseEntity.internalServerError().body("Error toggling device");
     }
   }

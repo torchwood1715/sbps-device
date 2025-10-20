@@ -3,6 +3,7 @@ package com.yh.sbps.device.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.entity.DeviceStatus;
+import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.repository.DeviceStatusRepository;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -36,7 +37,7 @@ public class DeviceStatusService {
       deviceStatus.setLastStatusJson(statusJson);
 
       deviceStatusRepository.save(deviceStatus);
-      logger.info("Updated status for device {}: {}", deviceId, statusJson);
+      logger.debug("Updated status for device {}: {}", deviceId, statusJson);
     } catch (Exception e) {
       logger.error("Error updating status for device {}", deviceId, e);
     }
@@ -52,7 +53,7 @@ public class DeviceStatusService {
       deviceStatus.setLastOnline(online);
 
       deviceStatusRepository.save(deviceStatus);
-      logger.info("Updated online status for device {}: {}", deviceId, online);
+      logger.debug("Updated online status for device {}: {}", deviceId, online);
     } catch (Exception e) {
       logger.error("Error updating online status for device {}", deviceId, e);
     }
@@ -69,7 +70,7 @@ public class DeviceStatusService {
       deviceStatus.setLastEventJson(eventJson);
 
       deviceStatusRepository.save(deviceStatus);
-      logger.info("Updated event for device {}: {}", deviceId, eventJson);
+      logger.debug("Updated event for device {}: {}", deviceId, eventJson);
     } catch (Exception e) {
       logger.error("Error updating event for device {}", deviceId, e);
     }
@@ -77,10 +78,6 @@ public class DeviceStatusService {
 
   public Optional<DeviceStatus> findByDeviceId(Long deviceId) {
     return deviceStatusRepository.findByDeviceId(deviceId);
-  }
-
-  public Optional<DeviceStatus> findByMqttPrefix(String mqttPrefix) {
-    return deviceStatusRepository.findByMqttPrefix(mqttPrefix);
   }
 
   public JsonNode getStatusAsJsonNode(Long deviceId) {
@@ -99,6 +96,25 @@ public class DeviceStatusService {
 
   public Boolean getOnlineStatus(Long deviceId) {
     return findByDeviceId(deviceId).map(DeviceStatus::getLastOnline).orElse(null);
+  }
+
+  public void updateControlState(Long deviceId, DeviceControlState state) {
+    try {
+      DeviceStatus deviceStatus =
+          deviceStatusRepository.findByDeviceId(deviceId).orElse(new DeviceStatus());
+
+      deviceStatus.setDeviceId(deviceId);
+      deviceStatus.setControlState(state);
+
+      deviceStatusRepository.save(deviceStatus);
+      logger.info("Updated control state for device {}: {}", deviceId, state);
+    } catch (Exception e) {
+      logger.error("Error updating control state for device {}", deviceId, e);
+    }
+  }
+
+  public DeviceControlState getControlState(Long deviceId) {
+    return findByDeviceId(deviceId).map(DeviceStatus::getControlState).orElse(null);
   }
 
   private JsonNode parseJson(String json) {

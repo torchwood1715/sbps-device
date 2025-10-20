@@ -31,6 +31,10 @@ public class DeviceStatus {
   @Column(name = "last_event_json")
   private String lastEventJson;
 
+  @Enumerated(EnumType.STRING)
+  @Column(name = "control_state")
+  private DeviceControlState controlState = DeviceControlState.ENABLED;
+
   @Column(name = "updated_at")
   private LocalDateTime updatedAt;
 
@@ -38,5 +42,11 @@ public class DeviceStatus {
   @PreUpdate
   public void updateTimestamp() {
     this.updatedAt = LocalDateTime.now();
+  }
+
+  public enum DeviceControlState {
+    ENABLED,
+    DISABLED_BY_USER,
+    DISABLED_BY_BALANCER
   }
 }

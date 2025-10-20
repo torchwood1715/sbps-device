@@ -7,8 +7,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.mqtt.core.DefaultMqttPahoClientFactory;
 import org.springframework.integration.mqtt.core.MqttPahoClientFactory;
-import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannelAdapter;
-import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.messaging.MessageChannel;
 
 @Configuration
@@ -44,21 +42,5 @@ public class MqttConfig {
   @Bean
   public MessageChannel mqttInputChannel() {
     return new DirectChannel();
-  }
-
-  @Bean
-  public MqttPahoMessageDrivenChannelAdapter inbound(MqttPahoClientFactory mqttClientFactory) {
-    MqttPahoMessageDrivenChannelAdapter adapter =
-        new MqttPahoMessageDrivenChannelAdapter(
-            "shellyInbound",
-            mqttClientFactory,
-            "shelly_1/online",
-            "shelly_1/events/rpc",
-            "shelly_1/status/switch:0");
-    adapter.setCompletionTimeout(5000);
-    adapter.setConverter(new DefaultPahoMessageConverter());
-    adapter.setQos(1);
-    adapter.setOutputChannel(mqttInputChannel());
-    return adapter;
   }
 }

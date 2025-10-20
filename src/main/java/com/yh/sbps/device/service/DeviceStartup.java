@@ -2,10 +2,11 @@ package com.yh.sbps.device.service;
 
 import com.yh.sbps.device.dto.DeviceDto;
 import com.yh.sbps.device.integration.ApiServiceClient;
-import jakarta.annotation.PostConstruct;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -21,7 +22,7 @@ public class DeviceStartup {
     this.shellyService = shellyService;
   }
 
-  @PostConstruct
+  @EventListener(ApplicationReadyEvent.class)
   public void initializeDeviceSubscriptions() {
     logger.info("Starting device initialization and MQTT subscription process...");
 

@@ -59,7 +59,7 @@ public class ApiServiceClient {
               url, HttpMethod.GET, request, new ParameterizedTypeReference<>() {});
 
       List<DeviceDto> devices = response.getBody();
-      logger.info(
+      logger.debug(
           "Successfully retrieved {} devices from API Service",
           devices != null ? devices.size() : 0);
       return devices != null ? devices : Collections.emptyList();
@@ -125,7 +125,7 @@ public class ApiServiceClient {
       SystemStateDto systemState = response.getBody();
 
       if (systemState != null) {
-        logger.info(
+        logger.debug(
             "Successfully retrieved system state for MQTT prefix: {} with {} devices",
             mqttPrefix,
             systemState.getDevices() != null ? systemState.getDevices().size() : 0);

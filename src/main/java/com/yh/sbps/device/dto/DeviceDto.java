@@ -11,6 +11,7 @@ public class DeviceDto {
   private Long id;
   private String name;
   private String mqttPrefix;
-  private String type;
+  private String deviceType;
   private Integer priority;
+  private Integer wattage;
 }

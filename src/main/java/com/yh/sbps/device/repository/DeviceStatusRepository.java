@@ -9,6 +9,4 @@ import org.springframework.stereotype.Repository;
 public interface DeviceStatusRepository extends JpaRepository<DeviceStatus, Long> {
 
   Optional<DeviceStatus> findByDeviceId(Long deviceId);
-
-  Optional<DeviceStatus> findByMqttPrefix(String mqttPrefix);
 }
