@@ -83,7 +83,7 @@ public class DeviceController {
     }
   }
 
-  @GetMapping("/plug/{deviceId}/status")
+  @PostMapping("/plug/{deviceId}/status")
   public ResponseEntity<JsonNode> getStatus(@PathVariable Long deviceId) {
     JsonNode status = deviceStatusService.getStatusAsJsonNode(deviceId);
     if (status == null) {
@@ -92,16 +92,16 @@ public class DeviceController {
     return ResponseEntity.ok(status);
   }
 
-  @GetMapping("/plug/{deviceId}/online")
+  @PostMapping("/plug/{deviceId}/online")
   public ResponseEntity<Boolean> getOnline(@PathVariable Long deviceId) {
     Boolean online = deviceStatusService.getOnlineStatus(deviceId);
     if (online == null) {
-      return ResponseEntity.notFound().build();
+      return ResponseEntity.notFound().build();  
     }
     return ResponseEntity.ok(online);
   }
 
-  @GetMapping("/plug/{deviceId}/events")
+  @PostMapping("/plug/{deviceId}/events")
   public ResponseEntity<JsonNode> getEvents(@PathVariable Long deviceId) {
     JsonNode event = deviceStatusService.getEventAsJsonNode(deviceId);
     if (event == null) {
