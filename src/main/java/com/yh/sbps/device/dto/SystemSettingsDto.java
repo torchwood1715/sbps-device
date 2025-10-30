@@ -8,9 +8,7 @@ import lombok.*;
 @AllArgsConstructor
 @ToString
 public class SystemSettingsDto {
-  private Long id;
   private Integer powerLimitWatts;
   private Integer powerOnMarginWatts;
   private Integer overloadCooldownSeconds;
-  private Long userId;
 }

@@ -219,11 +219,6 @@ public class ShellyService {
       adapter.start();
 
       subscribedDevices.add(deviceKey);
-      logger.info(
-          "Subscribed to MQTT topics for device: {} ({})",
-          device.getName(),
-          device.getMqttPrefix());
-
     } catch (Exception e) {
       logger.error(
           "Failed to subscribe to MQTT topics for device: {} ({})",
