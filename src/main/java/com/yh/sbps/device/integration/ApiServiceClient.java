@@ -1,6 +1,7 @@
 package com.yh.sbps.device.integration;
 
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.dto.DeviceStatusUpdateDto;
 import com.yh.sbps.device.dto.SystemStateDto;
 import java.util.Collections;
 import java.util.List;
@@ -50,7 +51,7 @@ public class ApiServiceClient {
   public List<DeviceDto> getAllDevices() {
     try {
       logger.debug("Requesting all devices from API Service");
-      String url = baseUrl + "/devices";
+      String url = baseUrl + "/api/devices";
 
       HttpEntity<Void> request = new HttpEntity<>(createAuthHeaders());
 
@@ -77,7 +78,7 @@ public class ApiServiceClient {
   public Optional<DeviceDto> getDeviceById(Long deviceId) {
     try {
       logger.debug("Requesting device with ID: {} from API Service", deviceId);
-      String url = baseUrl + "/devices/" + deviceId;
+      String url = baseUrl + "/api/devices/" + deviceId;
 
       HttpEntity<Void> request = new HttpEntity<>(createAuthHeaders());
 
@@ -116,7 +117,7 @@ public class ApiServiceClient {
   public Optional<SystemStateDto> getSystemStateByMqttPrefix(String mqttPrefix) {
     try {
       logger.debug("Requesting system state for MQTT prefix: {}", mqttPrefix);
-      String url = baseUrl + "/devices/by-mqtt-prefix/" + mqttPrefix;
+      String url = baseUrl + "/api/devices/by-mqtt-prefix/" + mqttPrefix;
 
       HttpEntity<Void> request = new HttpEntity<>(createAuthHeaders());
 
@@ -148,6 +149,26 @@ public class ApiServiceClient {
     } catch (Exception e) {
       logger.error("Error while getting system state for MQTT prefix: {}", mqttPrefix, e);
       return Optional.empty();
+    }
+  }
+
+  public void notifyApiOfDeviceUpdate(DeviceStatusUpdateDto statusUpdate) {
+    try {
+      logger.debug(
+          "Notifying sbps-api of status update for device: {}", statusUpdate.getDeviceId());
+      String url = baseUrl + "/api/control/internal/device-update";
+
+      HttpEntity<DeviceStatusUpdateDto> request =
+          new HttpEntity<>(statusUpdate, createAuthHeaders());
+
+      restTemplate.exchange(url, HttpMethod.POST, request, Void.class);
+
+      logger.debug("Successfully notified sbps-api for device {}", statusUpdate.getDeviceId());
+
+    } catch (HttpClientErrorException e) {
+      logger.error("HTTP error while notifying sbps-api: {} {}", e.getStatusCode(), e.getMessage());
+    } catch (Exception e) {
+      logger.error("Error while notifying sbps-api", e);
     }
   }
 }

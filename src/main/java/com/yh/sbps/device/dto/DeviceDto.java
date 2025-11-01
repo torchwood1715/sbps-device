@@ -14,4 +14,5 @@ public class DeviceDto {
   private String deviceType;
   private Integer priority;
   private Integer wattage;
+  private String username;
 }

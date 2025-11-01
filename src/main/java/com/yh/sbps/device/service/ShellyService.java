@@ -3,6 +3,7 @@ package com.yh.sbps.device.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.dto.DeviceStatusUpdateDto;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +75,11 @@ public class ShellyService {
         Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
         if (deviceId != null) {
           deviceStatusService.updateOnline(deviceId, online, mqttPrefix);
+          DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
+          if (device != null && device.getUsername() != null) {
+            apiServiceClient.notifyApiOfDeviceUpdate(
+                new DeviceStatusUpdateDto(deviceId, device.getUsername(), online, null));
+          }
         }
       } else if (topic.endsWith("/status/switch:0")) {
         String mqttPrefix = topic.substring(0, topic.indexOf("/status"));
@@ -81,9 +87,13 @@ public class ShellyService {
         Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
         if (deviceId != null) {
           deviceStatusService.updateStatus(deviceId, json, mqttPrefix);
+          DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
+          if (device != null && device.getUsername() != null) {
+            apiServiceClient.notifyApiOfDeviceUpdate(
+                new DeviceStatusUpdateDto(deviceId, device.getUsername(), null, json));
+          }
 
           // Check if this is a POWER_MONITOR device and trigger balancing logic
-          DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
           if (device != null && DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
             logger.debug(
                 "Power monitor device '{}' reported status. Triggering balancing logic.",
