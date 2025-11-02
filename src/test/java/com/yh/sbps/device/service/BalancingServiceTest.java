@@ -13,7 +13,7 @@ import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,7 +48,6 @@ class BalancingServiceTest {
   }
 
   @Test
-  @DisplayName("Сценарій 1: Немає перевантаження -> нічого не вимикається")
   void testNoOverload_NoDevicesTurnedOff() throws Exception {
     // Arrange
     String mqttPrefix = "monitor/device1";
@@ -75,16 +74,17 @@ class BalancingServiceTest {
   }
 
   @Test
-  @DisplayName("Сценарій 2: Є перевантаження -> вимикається пристрій з найнижчим пріоритетом")
   void testOverload_TurnsOffLowestPriorityDevice() throws Exception {
     // Arrange
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 1200.0}");
 
     DeviceDto device1 =
-        new DeviceDto(1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 300);
+        new DeviceDto(
+            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 300, false, 60, 20, "username");
     DeviceDto device2 =
-        new DeviceDto(2L, "Device2", "device/2", "SWITCHABLE_APPLIANCE", 2, 400);
+        new DeviceDto(
+            2L, "Device2", "device/2", "SWITCHABLE_APPLIANCE", 2, 400, false, 0, 0, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -97,8 +97,8 @@ class BalancingServiceTest {
         .thenReturn(Optional.of(systemState));
 
     // Mock device statuses - both devices are online and ON
-    mockDeviceOnlineAndOn(1L, true);
-    mockDeviceOnlineAndOn(2L, true);
+    mockDeviceOnlineAndOn(device1);
+    mockDeviceOnlineAndOn(device2);
 
     // Act
     balancingService.balancePower(mqttPrefix, powerMonitorStatus);
@@ -110,18 +110,20 @@ class BalancingServiceTest {
   }
 
   @Test
-  @DisplayName("Сценарій 3: Є перевантаження -> вимикається кілька пристроїв")
   void testOverload_TurnsOffMultipleDevices() throws Exception {
     // Arrange
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 1500.0}");
 
     DeviceDto device1 =
-        new DeviceDto(1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200);
+        new DeviceDto(
+            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200, true, 60, 20, "username");
     DeviceDto device2 =
-        new DeviceDto(2L, "Device2", "device/2", "SWITCHABLE_APPLIANCE", 2, 300);
+        new DeviceDto(
+            2L, "Device2", "device/2", "SWITCHABLE_APPLIANCE", 2, 300, true, 60, 20, "username");
     DeviceDto device3 =
-        new DeviceDto(3L, "Device3", "device/3", "SWITCHABLE_APPLIANCE", 3, 400);
+        new DeviceDto(
+            3L, "Device3", "device/3", "SWITCHABLE_APPLIANCE", 3, 400, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -134,9 +136,9 @@ class BalancingServiceTest {
         .thenReturn(Optional.of(systemState));
 
     // Mock device statuses - all devices are online and ON
-    mockDeviceOnlineAndOn(1L, true);
-    mockDeviceOnlineAndOn(2L, true);
-    mockDeviceOnlineAndOn(3L, true);
+    mockDeviceOnlineAndOn(device1);
+    mockDeviceOnlineAndOn(device2);
+    mockDeviceOnlineAndOn(device3);
 
     // Act
     balancingService.balancePower(mqttPrefix, powerMonitorStatus);
@@ -151,15 +153,14 @@ class BalancingServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Сценарій 4: Є перевантаження, але немає доступних пристроїв -> нічого не вимикається")
   void testOverload_NoAvailableDevices_NothingTurnedOff() throws Exception {
     // Arrange
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 1200.0}");
 
     DeviceDto device1 =
-        new DeviceDto(1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 300);
+        new DeviceDto(
+            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 300, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -184,16 +185,17 @@ class BalancingServiceTest {
   }
 
   @Test
-  @DisplayName("Сценарій 5: Навантаження впало -> пристрої вмикаються в порядку пріоритету")
   void testLoadDropped_DevicesRestoredByPriority() throws Exception {
     // Arrange
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 300.0}");
 
     DeviceDto device1 =
-        new DeviceDto(1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200);
+        new DeviceDto(
+            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200, true, 60, 20, "username");
     DeviceDto device2 =
-        new DeviceDto(2L, "Device2", "device/2", "SWITCHABLE_APPLIANCE", 2, 300);
+        new DeviceDto(
+            2L, "Device2", "device/2", "SWITCHABLE_APPLIANCE", 2, 300, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -224,15 +226,14 @@ class BalancingServiceTest {
   }
 
   @Test
-  @DisplayName(
-      "Сценарій 6: Навантаження впало, але пристрій вимкнений користувачем -> не вмикається")
   void testLoadDropped_DeviceDisabledByUser_NotRestored() throws Exception {
     // Arrange
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 500.0}");
 
     DeviceDto device1 =
-        new DeviceDto(1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200);
+        new DeviceDto(
+            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -246,8 +247,7 @@ class BalancingServiceTest {
         .thenReturn(Optional.of(systemState));
 
     // Mock device status - device is disabled by user
-    when(deviceStatusService.getControlState(1L))
-        .thenReturn(DeviceControlState.DISABLED_BY_USER);
+    when(deviceStatusService.getControlState(1L)).thenReturn(DeviceControlState.DISABLED_BY_USER);
 
     // Act
     balancingService.balancePower(mqttPrefix, powerMonitorStatus);
@@ -258,14 +258,14 @@ class BalancingServiceTest {
   }
 
   @Test
-  @DisplayName("Сценарій 7: Недостатньо запасу потужності для відновлення пристрою")
   void testLoadDropped_InsufficientMargin_DeviceNotRestored() throws Exception {
     // Arrange
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 950.0}");
 
     DeviceDto device1 =
-        new DeviceDto(1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200);
+        new DeviceDto(
+            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -292,22 +292,20 @@ class BalancingServiceTest {
 
   // Helper methods
 
-  private void mockDeviceOnlineAndOn(Long deviceId, boolean isOnlineAndOn) throws Exception {
+  private void mockDeviceOnlineAndOn(DeviceDto device) throws Exception {
     DeviceStatus deviceStatus = new DeviceStatus();
-    deviceStatus.setDeviceId(deviceId);
-    deviceStatus.setLastOnline(isOnlineAndOn);
+    deviceStatus.setDeviceId(device.getId());
+    deviceStatus.setLastOnline(true);
 
-    if (isOnlineAndOn) {
-      deviceStatus.setLastStatusJson("{\"output\": true}");
-      JsonNode statusNode = objectMapper.readTree("{\"output\": true}");
-      when(deviceStatusService.getStatusAsJsonNode(deviceId)).thenReturn(statusNode);
-    } else {
-      deviceStatus.setLastStatusJson("{\"output\": false}");
-      JsonNode statusNode = objectMapper.readTree("{\"output\": false}");
-      when(deviceStatusService.getStatusAsJsonNode(deviceId)).thenReturn(statusNode);
-    }
+    double actualPower = (device.getWattage() != null) ? device.getWattage().doubleValue() : 0.0;
 
-    when(deviceStatusService.findByDeviceId(deviceId)).thenReturn(Optional.of(deviceStatus));
+    String statusJsonString =
+        String.format(Locale.US, "{\"output\": true, \"apower\": %.1f}", actualPower);
+    deviceStatus.setLastStatusJson(statusJsonString);
+    JsonNode statusNode = objectMapper.readTree(statusJsonString);
+
+    when(deviceStatusService.findByDeviceId(device.getId())).thenReturn(Optional.of(deviceStatus));
+
+    when(deviceStatusService.getStatusAsJsonNode(device.getId())).thenReturn(statusNode);
   }
 }
-

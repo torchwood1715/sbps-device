@@ -1,0 +1,27 @@
+server:
+  port: ${PORT:8081}
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+api:
+  base-url: http://localhost:8080
+
+service-user:
+  email: test@test.com
+  password: test
+
+mqtt:
+  host: ${MQTT_HOST:localhost}
+  port: ${MQTT_PORT:1883}
+  username: ${MQTT_USERNAME:guest}
+  password: ${MQTT_PASSWORD:guest}

@@ -25,16 +25,6 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest
-@TestPropertySource(
-    properties = {
-      "spring.datasource.url=jdbc:h2:mem:testdb",
-      "spring.jpa.hibernate.ddl-auto=create-drop",
-      "mqtt.broker-url=tcp://localhost:1883",
-      "mqtt.client-id=test-client",
-      "api.base-url=http://localhost:8080",
-      "service-user.email=test@test.com",
-      "service-user.password=test"
-    })
 @DisplayName("ShellyService Integration Tests")
 class ShellyServiceIntegrationTest {
 
@@ -50,20 +40,48 @@ class ShellyServiceIntegrationTest {
 
   @Autowired private ObjectMapper objectMapper;
 
-  private DeviceDto testDevice1;
-  private DeviceDto testDevice2;
-  private DeviceDto powerMonitorDevice;
-
   @BeforeEach
   void setUp() {
     // Clear database before each test
     deviceStatusRepository.deleteAll();
 
     // Setup test devices
-    testDevice1 = new DeviceDto(1L, "TestDevice1", "test/device1", "SWITCHABLE_APPLIANCE", 1, 300);
-    testDevice2 = new DeviceDto(2L, "TestDevice2", "test/device2", "SWITCHABLE_APPLIANCE", 2, 400);
-    powerMonitorDevice =
-        new DeviceDto(3L, "PowerMonitor", "test/monitor", "POWER_MONITOR", null, null);
+    DeviceDto testDevice1 =
+        new DeviceDto(
+            1L,
+            "TestDevice1",
+            "test/device1",
+            "SWITCHABLE_APPLIANCE",
+            1,
+            300,
+            true,
+            60,
+            20,
+            "username");
+    DeviceDto testDevice2 =
+        new DeviceDto(
+            2L,
+            "TestDevice2",
+            "test/device2",
+            "SWITCHABLE_APPLIANCE",
+            2,
+            400,
+            true,
+            60,
+            20,
+            "username");
+    DeviceDto powerMonitorDevice =
+        new DeviceDto(
+            3L,
+            "PowerMonitor",
+            "test/monitor",
+            "POWER_MONITOR",
+            null,
+            null,
+            false,
+            0,
+            0,
+            "username");
 
     // Mock ApiServiceClient to return test devices
     when(apiServiceClient.getAllDevices())
@@ -74,7 +92,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 1: Обробка MQTT повідомлення про статус online")
   void testHandleMqttMessage_OnlineStatus() {
     // Arrange
     String topic = "test/device1/online";
@@ -94,7 +111,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 2: Обробка MQTT повідомлення про статус offline")
   void testHandleMqttMessage_OfflineStatus() {
     // Arrange
     String topic = "test/device1/online";
@@ -113,7 +129,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 3: Обробка MQTT повідомлення про статус пристрою (switch)")
   void testHandleMqttMessage_SwitchStatus() throws Exception {
     // Arrange
     String topic = "test/device1/status/switch:0";
@@ -136,7 +151,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 4: Обробка MQTT повідомлення від монітора потужності -> викликається балансування")
   void testHandleMqttMessage_PowerMonitor_TriggersBalancing() throws Exception {
     // Arrange
     String topic = "test/monitor/status/switch:0";
@@ -150,8 +164,7 @@ class ShellyServiceIntegrationTest {
 
     // Assert
     // Verify that balancePower was called
-    verify(balancingService, times(1))
-        .balancePower(eq("test/monitor"), any(JsonNode.class));
+    verify(balancingService, times(1)).balancePower(eq("test/monitor"), any(JsonNode.class));
 
     // Verify that device status was updated
     Optional<DeviceStatus> deviceStatus = deviceStatusRepository.findByDeviceId(3L);
@@ -160,7 +173,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 5: Обробка MQTT повідомлення про події (events/rpc)")
   void testHandleMqttMessage_EventsRpc() throws Exception {
     // Arrange
     String topic = "test/device1/events/rpc";
@@ -182,7 +194,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 6: Перевірка обробки кількох повідомлень від одного пристрою")
   void testMultipleMessagesFromSameDevice() throws Exception {
     // Arrange
     String topic1 = "test/device1/online";
@@ -213,7 +224,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 7: Обробка невідомого MQTT префіксу")
   void testHandleMqttMessage_UnknownMqttPrefix() {
     // Arrange
     String topic = "unknown/device/online";
@@ -232,7 +242,6 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  @DisplayName("Тест 8: Перевірка DeviceStatusService інтеграції")
   void testDeviceStatusServiceIntegration() throws Exception {
     // Arrange
     Long deviceId = 1L;
@@ -256,4 +265,3 @@ class ShellyServiceIntegrationTest {
     assertThat(onlineStatus).isTrue();
   }
 }
-

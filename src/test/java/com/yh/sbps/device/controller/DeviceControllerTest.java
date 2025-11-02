@@ -40,11 +40,21 @@ class DeviceControllerTest {
 
   @BeforeEach
   void setUp() {
-    testDevice = new DeviceDto(1L, "TestDevice", "test/device1", "SWITCHABLE_APPLIANCE", 1, 300);
+    testDevice =
+        new DeviceDto(
+            1L,
+            "TestDevice",
+            "test/device1",
+            "SWITCHABLE_APPLIANCE",
+            1,
+            300,
+            true,
+            60,
+            20,
+            "username");
   }
 
   @Test
-  @DisplayName("POST /api/device/internal/subscribe - успішна підписка на пристрій")
   void testSubscribeDevice_Success() throws Exception {
     // Arrange
     String deviceJson = objectMapper.writeValueAsString(testDevice);
@@ -61,7 +71,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("POST /api/device/internal/subscribe - помилка при підписці")
   void testSubscribeDevice_Error() throws Exception {
     // Arrange
     String deviceJson = objectMapper.writeValueAsString(testDevice);
@@ -77,7 +86,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("POST /api/device/plug/{deviceId}/toggle - увімкнення пристрою")
   void testTogglePlug_TurnOn_Success() throws Exception {
     // Arrange
     when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.of(testDevice));
@@ -93,7 +101,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("POST /api/device/plug/{deviceId}/toggle - вимкнення пристрою")
   void testTogglePlug_TurnOff_Success() throws Exception {
     // Arrange
     when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.of(testDevice));
@@ -110,7 +117,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("POST /api/device/plug/{deviceId}/toggle - пристрій не знайдено")
   void testTogglePlug_DeviceNotFound() throws Exception {
     // Arrange
     when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.empty());
@@ -126,10 +132,11 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("POST /api/device/plug/{deviceId}/toggle - пристрій без MQTT префіксу")
   void testTogglePlug_NoMqttPrefix() throws Exception {
     // Arrange
-    DeviceDto deviceWithoutMqtt = new DeviceDto(1L, "TestDevice", null, "SWITCHABLE_APPLIANCE", 1, 300);
+    DeviceDto deviceWithoutMqtt =
+        new DeviceDto(
+            1L, "TestDevice", null, "SWITCHABLE_APPLIANCE", 1, 300, true, 60, 20, "username");
     when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.of(deviceWithoutMqtt));
 
     // Act & Assert
@@ -142,7 +149,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("GET /api/device/plug/{deviceId}/status - отримання статусу пристрою")
   void testGetStatus_Success() throws Exception {
     // Arrange
     JsonNode statusJson = objectMapper.readTree("{\"output\":true,\"apower\":150.5}");
@@ -159,7 +165,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("GET /api/device/plug/{deviceId}/status - статус не знайдено")
   void testGetStatus_NotFound() throws Exception {
     // Arrange
     when(deviceStatusService.getStatusAsJsonNode(1L)).thenReturn(null);
@@ -169,7 +174,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("GET /api/device/plug/{deviceId}/online - пристрій онлайн")
   void testGetOnline_DeviceOnline() throws Exception {
     // Arrange
     when(deviceStatusService.getOnlineStatus(1L)).thenReturn(true);
@@ -184,7 +188,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("GET /api/device/plug/{deviceId}/online - пристрій офлайн")
   void testGetOnline_DeviceOffline() throws Exception {
     // Arrange
     when(deviceStatusService.getOnlineStatus(1L)).thenReturn(false);
@@ -197,7 +200,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("GET /api/device/plug/{deviceId}/online - статус не знайдено")
   void testGetOnline_NotFound() throws Exception {
     // Arrange
     when(deviceStatusService.getOnlineStatus(1L)).thenReturn(null);
@@ -207,10 +209,10 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("GET /api/device/plug/{deviceId}/events - отримання подій пристрою")
   void testGetEvents_Success() throws Exception {
     // Arrange
-    JsonNode eventJson = objectMapper.readTree("{\"method\":\"Switch.Toggle\",\"params\":{\"id\":0}}");
+    JsonNode eventJson =
+        objectMapper.readTree("{\"method\":\"Switch.Toggle\",\"params\":{\"id\":0}}");
     when(deviceStatusService.getEventAsJsonNode(1L)).thenReturn(eventJson);
 
     // Act & Assert
@@ -224,7 +226,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  @DisplayName("GET /api/device/plug/{deviceId}/events - події не знайдено")
   void testGetEvents_NotFound() throws Exception {
     // Arrange
     when(deviceStatusService.getEventAsJsonNode(1L)).thenReturn(null);
@@ -233,4 +234,3 @@ class DeviceControllerTest {
     mockMvc.perform(get("/api/device/plug/1/events")).andExpect(status().isNotFound());
   }
 }
-
