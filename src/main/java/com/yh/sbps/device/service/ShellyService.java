@@ -7,7 +7,6 @@ import com.yh.sbps.device.dto.DeviceStatusUpdateDto;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.Setter;
 import org.slf4j.Logger;
@@ -35,7 +34,8 @@ public class ShellyService {
   private final ObjectMapper objectMapper;
   private final DeviceStatusService deviceStatusService;
   private final ApiServiceClient apiServiceClient;
-  private final Set<String> subscribedDevices = ConcurrentHashMap.newKeySet();
+  private final Map<String, MqttPahoMessageDrivenChannelAdapter> subscribedAdapters =
+      new ConcurrentHashMap<>();
   private final Map<String, Long> mqttPrefixToDeviceIdMap = new ConcurrentHashMap<>();
   private final Map<String, DeviceDto> deviceCache = new ConcurrentHashMap<>();
 
@@ -207,7 +207,7 @@ public class ShellyService {
     }
 
     String deviceKey = device.getMqttPrefix();
-    if (subscribedDevices.contains(deviceKey)) {
+    if (subscribedAdapters.containsKey(deviceKey)) {
       logger.debug("Device {} is already subscribed, skipping", device.getName());
       return;
     }
@@ -228,7 +228,8 @@ public class ShellyService {
       adapter.setOutputChannel(mqttInputChannel);
       adapter.start();
 
-      subscribedDevices.add(deviceKey);
+      subscribedAdapters.put(deviceKey, adapter);
+      refreshDeviceCache(device);
     } catch (Exception e) {
       logger.error(
           "Failed to subscribe to MQTT topics for device: {} ({})",
@@ -236,5 +237,31 @@ public class ShellyService {
           device.getMqttPrefix(),
           e);
     }
+  }
+
+  public void unsubscribeFromDevice(String mqttPrefix) {
+    if (mqttPrefix == null || mqttPrefix.isEmpty()) {
+      return;
+    }
+
+    MqttPahoMessageDrivenChannelAdapter adapter = subscribedAdapters.remove(mqttPrefix);
+    if (adapter != null) {
+      adapter.stop();
+      logger.info("Unsubscribed from MQTT topics for prefix: {}", mqttPrefix);
+    } else {
+      logger.warn("No active subscription found for prefix to unsubscribe: {}", mqttPrefix);
+    }
+
+    deviceCache.remove(mqttPrefix);
+    mqttPrefixToDeviceIdMap.remove(mqttPrefix);
+  }
+
+  public void refreshDeviceCache(DeviceDto device) {
+    if (device == null || device.getMqttPrefix() == null) {
+      return;
+    }
+    deviceCache.put(device.getMqttPrefix(), device);
+    mqttPrefixToDeviceIdMap.put(device.getMqttPrefix(), device.getId());
+    logger.info("Refreshed device cache for: {}", device.getName());
   }
 }

@@ -43,6 +43,31 @@ public class DeviceController {
     }
   }
 
+  @PostMapping("/internal/unsubscribe")
+  public ResponseEntity<Void> unsubscribeDevice(@RequestBody String mqttPrefix) {
+    try {
+      String prefix = mqttPrefix.replace("\"", "");
+      shellyService.unsubscribeFromDevice(prefix);
+      logger.info("Unsubscribed from device via internal API call: {}", prefix);
+      return ResponseEntity.ok().build();
+    } catch (Exception e) {
+      logger.error("Failed to unsubscribe from device via internal API call: {}", mqttPrefix, e);
+      return ResponseEntity.internalServerError().build();
+    }
+  }
+
+  @PostMapping("/internal/refresh")
+  public ResponseEntity<Void> refreshDevice(@RequestBody DeviceDto device) {
+    try {
+      shellyService.refreshDeviceCache(device);
+      logger.info("Refreshed device cache via internal API call: {}", device.getName());
+      return ResponseEntity.ok().build();
+    } catch (Exception e) {
+      logger.error("Failed to refresh device cache via internal API call: {}", device.getName(), e);
+      return ResponseEntity.internalServerError().build();
+    }
+  }
+
   @PostMapping("/plug/{deviceId}/toggle")
   public ResponseEntity<String> togglePlug(@PathVariable Long deviceId, @RequestParam boolean on) {
     try {
