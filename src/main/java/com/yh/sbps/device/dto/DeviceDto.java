@@ -14,5 +14,8 @@ public class DeviceDto {
   private String deviceType;
   private Integer priority;
   private Integer wattage;
+  private boolean preventDowntime;
+  private Integer maxDowntimeMinutes;
+  private Integer minUptimeMinutes;
   private String username;
 }

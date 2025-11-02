@@ -43,3 +43,8 @@ databaseChangeLog:
                   type: TIMESTAMP
                   constraints:
                     nullable: true
+              - column:
+                  name: balancer_disabled_at
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: true

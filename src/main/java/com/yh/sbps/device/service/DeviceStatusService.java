@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.repository.DeviceStatusRepository;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,6 +108,12 @@ public class DeviceStatusService {
       deviceStatus.setDeviceId(deviceId);
       deviceStatus.setControlState(state);
 
+      if (state == DeviceControlState.DISABLED_BY_BALANCER) {
+        deviceStatus.setBalancerDisabledAt(LocalDateTime.now());
+      } else {
+        deviceStatus.setBalancerDisabledAt(null);
+      }
+
       deviceStatusRepository.save(deviceStatus);
       logger.info("Updated control state for device {}: {}", deviceId, state);
     } catch (Exception e) {
@@ -115,6 +123,10 @@ public class DeviceStatusService {
 
   public DeviceControlState getControlState(Long deviceId) {
     return findByDeviceId(deviceId).map(DeviceStatus::getControlState).orElse(null);
+  }
+
+  public LocalDateTime getBalancerDisabledAt(Long deviceId) {
+    return findByDeviceId(deviceId).map(DeviceStatus::getBalancerDisabledAt).orElse(null);
   }
 
   private JsonNode parseJson(String json) {

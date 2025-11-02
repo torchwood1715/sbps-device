@@ -38,6 +38,9 @@ public class DeviceStatus {
   @Column(name = "updated_at")
   private LocalDateTime updatedAt;
 
+  @Column(name = "balancer_disabled_at")
+  private LocalDateTime balancerDisabledAt;
+
   @PrePersist
   @PreUpdate
   public void updateTimestamp() {
