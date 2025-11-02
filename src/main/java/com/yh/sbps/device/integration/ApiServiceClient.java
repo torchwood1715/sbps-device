@@ -21,8 +21,9 @@ import org.springframework.web.client.RestTemplate;
 @Component
 public class ApiServiceClient {
 
+  public static final String TOKEN_REFRESH_AND_SINGLE_RETRY =
+      "Received {} on {} {}. Attempting token refresh and single retry...";
   private static final Logger logger = LoggerFactory.getLogger(ApiServiceClient.class);
-
   private final RestTemplate restTemplate;
   private final String baseUrl;
   private final AuthService authService;
@@ -48,16 +49,49 @@ public class ApiServiceClient {
     return headers;
   }
 
+  private boolean isUnauthorizedOrForbidden(HttpClientErrorException e) {
+    return e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403;
+  }
+
+  private <T> ResponseEntity<T> exchangeWithRetry(
+      String url, HttpMethod method, Object body, Class<T> responseType) {
+    try {
+      HttpEntity<Object> request = new HttpEntity<>(body, createAuthHeaders());
+      return restTemplate.exchange(url, method, request, responseType);
+    } catch (HttpClientErrorException e) {
+      if (isUnauthorizedOrForbidden(e)) {
+        logger.warn(TOKEN_REFRESH_AND_SINGLE_RETRY, e.getStatusCode().value(), method, url);
+        authService.refreshToken();
+        HttpEntity<Object> retryRequest = new HttpEntity<>(body, createAuthHeaders());
+        return restTemplate.exchange(url, method, retryRequest, responseType);
+      }
+      throw e;
+    }
+  }
+
+  private <T> ResponseEntity<T> exchangeWithRetry(
+      String url, HttpMethod method, ParameterizedTypeReference<T> responseType) {
+    try {
+      HttpEntity<Void> request = new HttpEntity<>(createAuthHeaders());
+      return restTemplate.exchange(url, method, request, responseType);
+    } catch (HttpClientErrorException e) {
+      if (isUnauthorizedOrForbidden(e)) {
+        logger.warn(TOKEN_REFRESH_AND_SINGLE_RETRY, e.getStatusCode().value(), method, url);
+        authService.refreshToken();
+        HttpEntity<Void> retryRequest = new HttpEntity<>(createAuthHeaders());
+        return restTemplate.exchange(url, method, retryRequest, responseType);
+      }
+      throw e;
+    }
+  }
+
   public List<DeviceDto> getAllDevices() {
     try {
       logger.debug("Requesting all devices from API Service");
       String url = baseUrl + "/api/devices";
 
-      HttpEntity<Void> request = new HttpEntity<>(createAuthHeaders());
-
       ResponseEntity<List<DeviceDto>> response =
-          restTemplate.exchange(
-              url, HttpMethod.GET, request, new ParameterizedTypeReference<>() {});
+          exchangeWithRetry(url, HttpMethod.GET, new ParameterizedTypeReference<>() {});
 
       List<DeviceDto> devices = response.getBody();
       logger.debug(
@@ -80,10 +114,8 @@ public class ApiServiceClient {
       logger.debug("Requesting device with ID: {} from API Service", deviceId);
       String url = baseUrl + "/api/devices/" + deviceId;
 
-      HttpEntity<Void> request = new HttpEntity<>(createAuthHeaders());
-
       ResponseEntity<DeviceDto> response =
-          restTemplate.exchange(url, HttpMethod.GET, request, DeviceDto.class);
+          exchangeWithRetry(url, HttpMethod.GET, null, DeviceDto.class);
       DeviceDto device = response.getBody();
 
       if (device != null) {
@@ -119,10 +151,8 @@ public class ApiServiceClient {
       logger.debug("Requesting system state for MQTT prefix: {}", mqttPrefix);
       String url = baseUrl + "/api/devices/by-mqtt-prefix/" + mqttPrefix;
 
-      HttpEntity<Void> request = new HttpEntity<>(createAuthHeaders());
-
       ResponseEntity<SystemStateDto> response =
-          restTemplate.exchange(url, HttpMethod.GET, request, SystemStateDto.class);
+          exchangeWithRetry(url, HttpMethod.GET, null, SystemStateDto.class);
       SystemStateDto systemState = response.getBody();
 
       if (systemState != null) {
@@ -158,10 +188,7 @@ public class ApiServiceClient {
           "Notifying sbps-api of status update for device: {}", statusUpdate.getDeviceId());
       String url = baseUrl + "/api/control/internal/device-update";
 
-      HttpEntity<DeviceStatusUpdateDto> request =
-          new HttpEntity<>(statusUpdate, createAuthHeaders());
-
-      restTemplate.exchange(url, HttpMethod.POST, request, Void.class);
+      exchangeWithRetry(url, HttpMethod.POST, statusUpdate, Void.class);
 
       logger.debug("Successfully notified sbps-api for device {}", statusUpdate.getDeviceId());
 

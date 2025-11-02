@@ -10,6 +10,7 @@ import com.yh.sbps.device.integration.ApiServiceClient;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap; // <-- Новий імпорт
 import java.util.stream.Collectors;
 import lombok.Setter;
 import org.slf4j.Logger;
@@ -22,11 +23,12 @@ public class BalancingService {
   private static final Logger logger = LoggerFactory.getLogger(BalancingService.class);
   private static final String SHELLY_SERVICE_ERROR =
       "ShellyService not wired in BalancingService!)";
-  private static final String DEVICE_TYPE_SWITCHABLE_APPLIANCE = "SWITCHABLE_APPLIANCE";
+  private static final String SWITCHABLE_APPLIANCE = "SWITCHABLE_APPLIANCE";
   private static final int DEFAULT_POWER_ON_MARGIN_WATTS = 100;
 
   private final ApiServiceClient apiServiceClient;
   private final DeviceStatusService deviceStatusService;
+  private final Map<String, LocalDateTime> lastOverloadTimeByMqttPrefix = new ConcurrentHashMap<>();
 
   @Setter private ShellyService shellyService; // Lazy injection
 
@@ -67,20 +69,31 @@ public class BalancingService {
 
       // Step 3: OVERLOAD logic
       double powerAfterOverload =
-          handleOverload(currentTotalPower, powerLimitWatts, systemState.getDevices());
+          handleOverload(currentTotalPower, powerLimitWatts, systemState.getDevices(), mqttPrefix);
 
       // Step 4: PREVENT DOWNTIME logic
       double powerAfterDowntimePrevention =
           handlePreventDowntime(
               powerAfterOverload, powerLimitWatts, powerOnMargin, systemState.getDevices());
 
-      // Step 5: RESTORE logic
+      int overloadCooldownSeconds =
+          settings.getOverloadCooldownSeconds() != null ? settings.getOverloadCooldownSeconds() : 0;
       handleRestore(
-          powerAfterDowntimePrevention, powerLimitWatts, powerOnMargin, systemState.getDevices());
+          powerAfterDowntimePrevention,
+          powerLimitWatts,
+          powerOnMargin,
+          overloadCooldownSeconds,
+          systemState.getDevices(),
+          mqttPrefix);
 
     } catch (Exception e) {
       logger.error("Error during power balancing for MQTT prefix: {}", mqttPrefix, e);
     }
+  }
+
+  public void clearOverloadCooldown(String mqttPrefix) {
+    lastOverloadTimeByMqttPrefix.remove(mqttPrefix);
+    logger.info("Cleared overload cooldown timer for prefix: {}", mqttPrefix);
   }
 
   private double getActualPower(Long deviceId) {
@@ -96,21 +109,27 @@ public class BalancingService {
   }
 
   private double handleOverload(
-      double currentTotalPower, int powerLimitWatts, List<DeviceDto> allDevices) {
+      double currentTotalPower,
+      int powerLimitWatts,
+      List<DeviceDto> allDevices,
+      String mqttPrefix) {
     if (currentTotalPower <= powerLimitWatts) {
       logger.debug(
           "System OK. Current power: {} W, Limit: {} W", currentTotalPower, powerLimitWatts);
       return currentTotalPower;
     }
 
+    lastOverloadTimeByMqttPrefix.put(mqttPrefix, LocalDateTime.now());
+
     logger.warn(
-        "OVERLOAD! Current power: {} W > Limit: {} W. Starting shutdown...",
+        "OVERLOAD! (Prefix: {}) Current power: {} W > Limit: {} W. Starting shutdown...",
+        mqttPrefix,
         currentTotalPower,
         powerLimitWatts);
 
     List<SheddableDevice> devicesToTurnOff =
         allDevices.stream()
-            .filter(device -> DEVICE_TYPE_SWITCHABLE_APPLIANCE.equals(device.getDeviceType()))
+            .filter(device -> SWITCHABLE_APPLIANCE.equals(device.getDeviceType()))
             .filter(this::isDeviceOnlineAndOn)
             .map(
                 device -> {
@@ -120,7 +139,7 @@ public class BalancingService {
             .filter(sd -> sd.actualPower() > 0)
             .sorted(
                 Comparator.comparing((SheddableDevice sd) -> sd.device().getPriority())
-                    .reversed()
+                    .reversed() // 10, 9, 8...
                     .thenComparing(sd -> sd.device().getId()))
             .toList();
 
@@ -165,7 +184,6 @@ public class BalancingService {
       int powerOnMargin,
       List<DeviceDto> allDevices) {
 
-    // 1. Find critical devices whose downtime has expired
     List<DeviceDto> devicesToForceOn =
         allDevices.stream()
             .filter(
@@ -191,7 +209,7 @@ public class BalancingService {
     // 2. Find "sacrificial" devices that can be turned off
     List<DeviceDto> sacrificialDevices =
         allDevices.stream()
-            .filter(d -> DEVICE_TYPE_SWITCHABLE_APPLIANCE.equals(d.getDeviceType()))
+            .filter(d -> SWITCHABLE_APPLIANCE.equals(d.getDeviceType()))
             .filter(this::isDeviceOnlineAndOn)
             .filter(
                 d -> !devicesToForceOn.contains(d)) // Don't sacrifice a device we want to turn on
@@ -279,7 +297,25 @@ public class BalancingService {
       double currentTotalPower,
       int powerLimitWatts,
       int powerOnMargin,
-      List<DeviceDto> allDevices) {
+      int overloadCooldownSeconds,
+      List<DeviceDto> allDevices,
+      String mqttPrefix) {
+    LocalDateTime lastOverloadTime = lastOverloadTimeByMqttPrefix.get(mqttPrefix);
+
+    // Enforce overload cooldown: skip restoring if not enough time has passed
+    if (overloadCooldownSeconds > 0 && lastOverloadTime != null) {
+      long secondsSinceOverload = ChronoUnit.SECONDS.between(lastOverloadTime, LocalDateTime.now());
+      if (secondsSinceOverload < overloadCooldownSeconds) {
+        logger.debug(
+            "RESTORE cooldown active for {}: {}s since overload (< {}s). Skipping restore.",
+            mqttPrefix,
+            secondsSinceOverload,
+            overloadCooldownSeconds);
+        return;
+      } else {
+        lastOverloadTimeByMqttPrefix.remove(mqttPrefix);
+      }
+    }
 
     double availableMargin = powerLimitWatts - currentTotalPower - powerOnMargin;
     if (availableMargin <= 0) {
@@ -288,13 +324,14 @@ public class BalancingService {
     }
 
     logger.debug(
-        "RESTORE: System has {} W available margin. Checking for devices to restore...",
+        "RESTORE: System {} has {} W available margin. Checking for devices to restore...",
+        mqttPrefix,
         availableMargin);
 
     // Find devices disabled BY BALANCER (and not by user)
     List<DeviceDto> devicesToRestore =
         allDevices.stream()
-            .filter(device -> DEVICE_TYPE_SWITCHABLE_APPLIANCE.equals(device.getDeviceType()))
+            .filter(device -> SWITCHABLE_APPLIANCE.equals(device.getDeviceType()))
             .filter(device -> isDeviceDisabledByBalancer(device.getId()))
             .filter(device -> !isDeviceOnlineAndOn(device)) // Ensure it's actually off
             .sorted(Comparator.comparing(DeviceDto::getPriority)) // 0, 1, 2...
@@ -326,8 +363,6 @@ public class BalancingService {
       }
     }
   }
-
-  // --- Helper Methods ---
 
   private void turnOnDevice(DeviceDto device) {
     Objects.requireNonNull(shellyService, SHELLY_SERVICE_ERROR);

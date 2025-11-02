@@ -248,6 +248,10 @@ public class ShellyService {
     if (adapter != null) {
       adapter.stop();
       logger.info("Unsubscribed from MQTT topics for prefix: {}", mqttPrefix);
+
+      if (balancingService != null) {
+        balancingService.clearOverloadCooldown(mqttPrefix);
+      }
     } else {
       logger.warn("No active subscription found for prefix to unsubscribe: {}", mqttPrefix);
     }
