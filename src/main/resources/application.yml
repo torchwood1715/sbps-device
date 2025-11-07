@@ -2,11 +2,16 @@ server:
   port: ${PORT:8081}
 
 spring:
+  cloud:
+    gcp:
+      sql:
+        instance-connection-name: ${DB_INSTANCE_CONNECTION_NAME}
+        database-name: sbps_device
   datasource:
-    url: jdbc:h2:file:./data/device-service-db
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    url: jdbc:postgresql:///${spring.cloud.gcp.sql.database-name}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+    driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: none
