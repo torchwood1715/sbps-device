@@ -17,6 +17,7 @@ public class SystemStateCache {
 
   private static final Logger logger = LoggerFactory.getLogger(SystemStateCache.class);
   private final ApiServiceClient apiServiceClient;
+  private final ShellyService shellyService;
 
   // key - mqttPrefix of monitor
   private final Map<String, SystemStateDto> stateCache = new ConcurrentHashMap<>();
@@ -24,8 +25,9 @@ public class SystemStateCache {
   // key - mqttPrefix of any device, value - mqttPrefix of monitor
   private final Map<String, String> deviceToMonitorMap = new ConcurrentHashMap<>();
 
-  public SystemStateCache(ApiServiceClient apiServiceClient) {
+  public SystemStateCache(ApiServiceClient apiServiceClient, ShellyService shellyService) {
     this.apiServiceClient = apiServiceClient;
+    this.shellyService = shellyService;
   }
 
   public Optional<SystemStateDto> getState(String monitorMqttPrefix) {
@@ -43,6 +45,14 @@ public class SystemStateCache {
         stateCache.put(monitorMqttPrefix, systemState);
 
         updateDeviceToMonitorMap(monitorMqttPrefix, systemState);
+
+        if (systemState.getDevices() != null) {
+          logger.debug(
+              "Refreshing ShellyService cache for {} devices.", systemState.getDevices().size());
+          for (DeviceDto device : systemState.getDevices()) {
+            shellyService.refreshDeviceCache(device);
+          }
+        }
 
         logger.info(
             "Successfully refreshed state for monitor: {}. {} devices loaded.",

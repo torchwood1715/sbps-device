@@ -62,19 +62,6 @@ public class DeviceController {
     }
   }
 
-  @PostMapping("/internal/refresh")
-  public ResponseEntity<Void> refreshDevice(@RequestBody DeviceDto device) {
-    try {
-      shellyService.refreshDeviceCache(device);
-      systemStateCache.refreshState(device.getMqttPrefix());
-      logger.info("Refreshed device cache via internal API call: {}", device.getName());
-      return ResponseEntity.ok().build();
-    } catch (Exception e) {
-      logger.error("Failed to refresh device cache via internal API call: {}", device.getName(), e);
-      return ResponseEntity.internalServerError().build();
-    }
-  }
-
   @PostMapping("/internal/refresh-state")
   public ResponseEntity<Void> refreshState(@RequestBody String mqttPrefix) {
     try {
