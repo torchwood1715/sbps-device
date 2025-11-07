@@ -6,6 +6,7 @@ import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.service.DeviceStatusService;
 import com.yh.sbps.device.service.ShellyService;
+import com.yh.sbps.device.service.SystemStateCache;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,14 +22,17 @@ public class DeviceController {
   private final ShellyService shellyService;
   private final ApiServiceClient apiServiceClient;
   private final DeviceStatusService deviceStatusService;
+  private final SystemStateCache systemStateCache;
 
   public DeviceController(
       ShellyService shellyService,
       ApiServiceClient apiServiceClient,
-      DeviceStatusService deviceStatusService) {
+      DeviceStatusService deviceStatusService,
+      SystemStateCache systemStateCache) {
     this.shellyService = shellyService;
     this.apiServiceClient = apiServiceClient;
     this.deviceStatusService = deviceStatusService;
+    this.systemStateCache = systemStateCache;
   }
 
   @PostMapping("/internal/subscribe")
@@ -36,6 +40,7 @@ public class DeviceController {
     try {
       shellyService.subscribeForDevice(device);
       logger.info("Subscribed to device topics via internal API call: {}", device.getName());
+      systemStateCache.refreshState(device.getMqttPrefix());
       return ResponseEntity.ok().build();
     } catch (Exception e) {
       logger.error("Failed to subscribe to device via internal API call: {}", device.getName(), e);
@@ -48,6 +53,7 @@ public class DeviceController {
     try {
       String prefix = mqttPrefix.replace("\"", "");
       shellyService.unsubscribeFromDevice(prefix);
+      systemStateCache.removeDevice(prefix);
       logger.info("Unsubscribed from device via internal API call: {}", prefix);
       return ResponseEntity.ok().build();
     } catch (Exception e) {
@@ -60,10 +66,24 @@ public class DeviceController {
   public ResponseEntity<Void> refreshDevice(@RequestBody DeviceDto device) {
     try {
       shellyService.refreshDeviceCache(device);
+      systemStateCache.refreshState(device.getMqttPrefix());
       logger.info("Refreshed device cache via internal API call: {}", device.getName());
       return ResponseEntity.ok().build();
     } catch (Exception e) {
       logger.error("Failed to refresh device cache via internal API call: {}", device.getName(), e);
+      return ResponseEntity.internalServerError().build();
+    }
+  }
+
+  @PostMapping("/internal/refresh-state")
+  public ResponseEntity<Void> refreshState(@RequestBody String mqttPrefix) {
+    try {
+      String prefix = mqttPrefix.replace("\"", "");
+      systemStateCache.refreshState(prefix);
+      logger.info("Refreshed system state via internal API call for: {}", prefix);
+      return ResponseEntity.ok().build();
+    } catch (Exception e) {
+      logger.error("Failed to refresh system state via internal API call: {}", mqttPrefix, e);
       return ResponseEntity.internalServerError().build();
     }
   }

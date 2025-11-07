@@ -6,7 +6,6 @@ import com.yh.sbps.device.dto.SystemSettingsDto;
 import com.yh.sbps.device.dto.SystemStateDto;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
-import com.yh.sbps.device.integration.ApiServiceClient;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -26,15 +25,14 @@ public class BalancingService {
   private static final String SWITCHABLE_APPLIANCE = "SWITCHABLE_APPLIANCE";
   private static final int DEFAULT_POWER_ON_MARGIN_WATTS = 100;
 
-  private final ApiServiceClient apiServiceClient;
   private final DeviceStatusService deviceStatusService;
   private final Map<String, LocalDateTime> lastOverloadTimeByMqttPrefix = new ConcurrentHashMap<>();
-
+  private final SystemStateCache systemStateCache;
   @Setter private ShellyService shellyService; // Lazy injection
 
   public BalancingService(
-      ApiServiceClient apiServiceClient, DeviceStatusService deviceStatusService) {
-    this.apiServiceClient = apiServiceClient;
+      DeviceStatusService deviceStatusService, SystemStateCache systemStateCache) {
+    this.systemStateCache = systemStateCache;
     this.deviceStatusService = deviceStatusService;
   }
 
@@ -48,10 +46,11 @@ public class BalancingService {
       }
 
       // Step 2: Get system state
-      Optional<SystemStateDto> systemStateOpt =
-          apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix);
+      Optional<SystemStateDto> systemStateOpt = systemStateCache.getState(mqttPrefix);
       if (systemStateOpt.isEmpty()) {
-        logger.error("System state not found for {}. Aborting balancing.", mqttPrefix);
+        logger.error("System state not found in cache for {}. Aborting balancing.", mqttPrefix);
+        // TODO maybe worth try to update state here?
+        // systemStateCache.refreshState(mqttPrefix);
         return;
       }
 

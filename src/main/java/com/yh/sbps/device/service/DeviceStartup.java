@@ -16,10 +16,15 @@ public class DeviceStartup {
 
   private final ApiServiceClient apiServiceClient;
   private final ShellyService shellyService;
+  private final SystemStateCache systemStateCache;
 
-  public DeviceStartup(ApiServiceClient apiServiceClient, ShellyService shellyService) {
+  public DeviceStartup(
+      ApiServiceClient apiServiceClient,
+      ShellyService shellyService,
+      SystemStateCache systemStateCache) {
     this.apiServiceClient = apiServiceClient;
     this.shellyService = shellyService;
+    this.systemStateCache = systemStateCache;
   }
 
   @EventListener(ApplicationReadyEvent.class)
@@ -42,6 +47,11 @@ public class DeviceStartup {
         try {
           shellyService.subscribeForDevice(device);
           successCount++;
+          if ("POWER_MONITOR".equals(device.getDeviceType())) {
+            logger.info(
+                "Found power monitor: {}. Initializing system state cache.", device.getName());
+            systemStateCache.refreshState(device.getMqttPrefix());
+          }
           logger.info(
               "Subscribed to MQTT topics for device: {} ({})",
               device.getName(),
