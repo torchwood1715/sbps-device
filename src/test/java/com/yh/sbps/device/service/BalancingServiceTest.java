@@ -10,7 +10,6 @@ import com.yh.sbps.device.dto.SystemSettingsDto;
 import com.yh.sbps.device.dto.SystemStateDto;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
-import com.yh.sbps.device.integration.ApiServiceClient;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Locale;
@@ -30,7 +29,7 @@ import org.mockito.quality.Strictness;
 @DisplayName("BalancingService Unit Tests")
 class BalancingServiceTest {
 
-  @Mock private ApiServiceClient apiServiceClient;
+  @Mock private SystemStateCache systemStateCache;
 
   @Mock private DeviceStatusService deviceStatusService;
 
@@ -61,7 +60,7 @@ class BalancingServiceTest {
     systemState.setSystemSettings(settings);
     systemState.setDevices(Collections.emptyList());
 
-    when(apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix))
+    when(systemStateCache.getState(mqttPrefix))
         .thenReturn(Optional.of(systemState));
 
     // Act
@@ -93,8 +92,8 @@ class BalancingServiceTest {
     systemState.setSystemSettings(settings);
     systemState.setDevices(Arrays.asList(device1, device2));
 
-    when(apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix))
-        .thenReturn(Optional.of(systemState));
+      when(systemStateCache.getState(mqttPrefix))
+              .thenReturn(Optional.of(systemState));
 
     // Mock device statuses - both devices are online and ON
     mockDeviceOnlineAndOn(device1);
@@ -132,8 +131,8 @@ class BalancingServiceTest {
     systemState.setSystemSettings(settings);
     systemState.setDevices(Arrays.asList(device1, device2, device3));
 
-    when(apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix))
-        .thenReturn(Optional.of(systemState));
+      when(systemStateCache.getState(mqttPrefix))
+              .thenReturn(Optional.of(systemState));
 
     // Mock device statuses - all devices are online and ON
     mockDeviceOnlineAndOn(device1);
@@ -169,8 +168,8 @@ class BalancingServiceTest {
     systemState.setSystemSettings(settings);
     systemState.setDevices(Collections.singletonList(device1));
 
-    when(apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix))
-        .thenReturn(Optional.of(systemState));
+      when(systemStateCache.getState(mqttPrefix))
+              .thenReturn(Optional.of(systemState));
 
     // Mock device status - device is offline (no status available)
     when(deviceStatusService.findByDeviceId(1L)).thenReturn(Optional.empty());
@@ -206,10 +205,10 @@ class BalancingServiceTest {
     systemState.setSystemSettings(settings);
     systemState.setDevices(Arrays.asList(device1, device2));
 
-    when(apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix))
-        .thenReturn(Optional.of(systemState));
+      when(systemStateCache.getState(mqttPrefix))
+              .thenReturn(Optional.of(systemState));
 
-    // Mock device statuses - both devices are disabled by balancer
+    // Mock device statuses - balancer disables both devices
     when(deviceStatusService.getControlState(1L))
         .thenReturn(DeviceControlState.DISABLED_BY_BALANCER);
     when(deviceStatusService.getControlState(2L))
@@ -243,10 +242,10 @@ class BalancingServiceTest {
     systemState.setSystemSettings(settings);
     systemState.setDevices(Collections.singletonList(device1));
 
-    when(apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix))
-        .thenReturn(Optional.of(systemState));
+      when(systemStateCache.getState(mqttPrefix))
+              .thenReturn(Optional.of(systemState));
 
-    // Mock device status - device is disabled by user
+    // Mock device status - user disables device
     when(deviceStatusService.getControlState(1L)).thenReturn(DeviceControlState.DISABLED_BY_USER);
 
     // Act
@@ -275,10 +274,10 @@ class BalancingServiceTest {
     systemState.setSystemSettings(settings);
     systemState.setDevices(Collections.singletonList(device1));
 
-    when(apiServiceClient.getSystemStateByMqttPrefix(mqttPrefix))
-        .thenReturn(Optional.of(systemState));
+      when(systemStateCache.getState(mqttPrefix))
+              .thenReturn(Optional.of(systemState));
 
-    // Mock device status - device is disabled by balancer
+    // Mock device status - balancer disables device
     when(deviceStatusService.getControlState(1L))
         .thenReturn(DeviceControlState.DISABLED_BY_BALANCER);
 

@@ -13,6 +13,8 @@ import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.service.DeviceStatusService;
 import com.yh.sbps.device.service.ShellyService;
 import java.util.Optional;
+
+import com.yh.sbps.device.service.SystemStateCache;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,8 @@ class DeviceControllerTest {
   @MockitoBean private ApiServiceClient apiServiceClient;
 
   @MockitoBean private DeviceStatusService deviceStatusService;
+
+  @MockitoBean private SystemStateCache systemStateCache;
 
   private DeviceDto testDevice;
 
