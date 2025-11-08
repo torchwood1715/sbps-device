@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,7 @@ public class SystemStateCache {
   private final ShellyService shellyService;
 
   // key - mqttPrefix of monitor
-  private final Map<String, SystemStateDto> stateCache = new ConcurrentHashMap<>();
+  @Getter private final Map<String, SystemStateDto> stateCache = new ConcurrentHashMap<>();
 
   // key - mqttPrefix of any device, value - mqttPrefix of monitor
   private final Map<String, String> deviceToMonitorMap = new ConcurrentHashMap<>();

@@ -2,12 +2,15 @@ package com.yh.sbps.device.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.dto.DeviceStatusDto;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
-import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.service.DeviceStatusService;
 import com.yh.sbps.device.service.ShellyService;
 import com.yh.sbps.device.service.SystemStateCache;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -20,17 +23,14 @@ public class DeviceController {
   private static final Logger logger = LoggerFactory.getLogger(DeviceController.class);
 
   private final ShellyService shellyService;
-  private final ApiServiceClient apiServiceClient;
   private final DeviceStatusService deviceStatusService;
   private final SystemStateCache systemStateCache;
 
   public DeviceController(
       ShellyService shellyService,
-      ApiServiceClient apiServiceClient,
       DeviceStatusService deviceStatusService,
       SystemStateCache systemStateCache) {
     this.shellyService = shellyService;
-    this.apiServiceClient = apiServiceClient;
     this.deviceStatusService = deviceStatusService;
     this.systemStateCache = systemStateCache;
   }
@@ -78,11 +78,26 @@ public class DeviceController {
   @PostMapping("/plug/{deviceId}/toggle")
   public ResponseEntity<String> togglePlug(@PathVariable Long deviceId, @RequestParam boolean on) {
     try {
-      Optional<DeviceDto> deviceOpt = apiServiceClient.getDeviceById(deviceId);
+      Optional<DeviceDto> deviceOpt =
+          systemStateCache.getStateCache().values().stream()
+              .flatMap(
+                  state ->
+                      state.getDevices() != null ? state.getDevices().stream() : Stream.empty())
+              .filter(device -> deviceId.equals(device.getId()))
+              .findFirst();
 
       if (deviceOpt.isEmpty()) {
-        logger.warn("Device with ID {} not found", deviceId);
-        return ResponseEntity.notFound().build();
+        logger.warn("Device with ID {} not found in cache", deviceId);
+        Optional<String> mqttPrefixOpt = deviceStatusService.findMqttPrefixById(deviceId);
+        if (mqttPrefixOpt.isEmpty()) {
+          logger.error("Device with ID {} not found in cache or DB", deviceId);
+          return ResponseEntity.notFound().build();
+        }
+        DeviceDto fallbackDevice = new DeviceDto();
+        fallbackDevice.setId(deviceId);
+        fallbackDevice.setName("Device " + deviceId);
+        fallbackDevice.setMqttPrefix(mqttPrefixOpt.get());
+        deviceOpt = Optional.of(fallbackDevice);
       }
 
       DeviceDto device = deviceOpt.get();
@@ -140,5 +155,17 @@ public class DeviceController {
       return ResponseEntity.notFound().build();
     }
     return ResponseEntity.ok(event);
+  }
+
+  @PostMapping("/internal/all-statuses")
+  public ResponseEntity<Map<Long, DeviceStatusDto>> getAllStatusesByIds(
+      @RequestBody List<Long> deviceIds) {
+    try {
+      Map<Long, DeviceStatusDto> statuses = deviceStatusService.getAllStatusesByIds(deviceIds);
+      return ResponseEntity.ok(statuses);
+    } catch (Exception e) {
+      logger.error("Error fetching all device statuses", e);
+      return ResponseEntity.internalServerError().build();
+    }
   }
 }

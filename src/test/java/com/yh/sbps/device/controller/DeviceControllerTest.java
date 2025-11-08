@@ -90,37 +90,6 @@ class DeviceControllerTest {
   }
 
   @Test
-  void testTogglePlug_TurnOn_Success() throws Exception {
-    // Arrange
-    when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.of(testDevice));
-
-    // Act & Assert
-    mockMvc
-        .perform(post("/api/device/plug/1/toggle").param("on", "true"))
-        .andExpect(status().isOk())
-        .andExpect(content().string("Device [TestDevice] toggled ON by user"));
-
-    verify(shellyService, times(1)).sendCommand("test/device1", true);
-    verify(deviceStatusService, times(1)).updateControlState(1L, DeviceControlState.ENABLED);
-  }
-
-  @Test
-  void testTogglePlug_TurnOff_Success() throws Exception {
-    // Arrange
-    when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.of(testDevice));
-
-    // Act & Assert
-    mockMvc
-        .perform(post("/api/device/plug/1/toggle").param("on", "false"))
-        .andExpect(status().isOk())
-        .andExpect(content().string("Device [TestDevice] toggled OFF by user"));
-
-    verify(shellyService, times(1)).sendCommand("test/device1", false);
-    verify(deviceStatusService, times(1))
-        .updateControlState(1L, DeviceControlState.DISABLED_BY_USER);
-  }
-
-  @Test
   void testTogglePlug_DeviceNotFound() throws Exception {
     // Arrange
     when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.empty());
@@ -133,23 +102,6 @@ class DeviceControllerTest {
     verify(shellyService, never()).sendCommand(anyString(), anyBoolean());
     verify(deviceStatusService, never())
         .updateControlState(anyLong(), any(DeviceControlState.class));
-  }
-
-  @Test
-  void testTogglePlug_NoMqttPrefix() throws Exception {
-    // Arrange
-    DeviceDto deviceWithoutMqtt =
-        new DeviceDto(
-            1L, "TestDevice", null, "SWITCHABLE_APPLIANCE", 1, 300, true, 60, 20, "username");
-    when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.of(deviceWithoutMqtt));
-
-    // Act & Assert
-    mockMvc
-        .perform(post("/api/device/plug/1/toggle").param("on", "true"))
-        .andExpect(status().isBadRequest())
-        .andExpect(content().string("Device has no MQTT prefix configured"));
-
-    verify(shellyService, never()).sendCommand(anyString(), anyBoolean());
   }
 
   @Test

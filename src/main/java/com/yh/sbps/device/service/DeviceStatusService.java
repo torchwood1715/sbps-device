@@ -2,12 +2,15 @@ package com.yh.sbps.device.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.yh.sbps.device.dto.DeviceStatusDto;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.repository.DeviceStatusRepository;
-
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -26,6 +29,22 @@ public class DeviceStatusService {
       DeviceStatusRepository deviceStatusRepository, ObjectMapper objectMapper) {
     this.deviceStatusRepository = deviceStatusRepository;
     this.objectMapper = objectMapper;
+  }
+
+  public Map<Long, DeviceStatusDto> getAllStatusesByIds(List<Long> deviceIds) {
+    return deviceIds.stream()
+        .collect(
+            Collectors.toMap(
+                id -> id,
+                id -> {
+                  Optional<DeviceStatus> entityOpt = findByDeviceId(id);
+                  JsonNode statusJson =
+                      entityOpt
+                          .map(DeviceStatus::getLastStatusJson)
+                          .map(this::parseJson)
+                          .orElse(null);
+                  return DeviceStatusDto.from(entityOpt.orElse(null), statusJson);
+                }));
   }
 
   public void updateStatus(Long deviceId, JsonNode status, String mqttPrefix) {
@@ -80,6 +99,10 @@ public class DeviceStatusService {
 
   public Optional<DeviceStatus> findByDeviceId(Long deviceId) {
     return deviceStatusRepository.findByDeviceId(deviceId);
+  }
+
+  public Optional<String> findMqttPrefixById(Long deviceId) {
+    return deviceStatusRepository.findByDeviceId(deviceId).map(DeviceStatus::getMqttPrefix);
   }
 
   public JsonNode getStatusAsJsonNode(Long deviceId) {
