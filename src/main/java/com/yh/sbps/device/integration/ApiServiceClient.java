@@ -1,5 +1,6 @@
 package com.yh.sbps.device.integration;
 
+import com.yh.sbps.device.dto.BalancerActionDto;
 import com.yh.sbps.device.dto.DeviceDto;
 import com.yh.sbps.device.dto.DeviceStatusUpdateDto;
 import com.yh.sbps.device.dto.SystemStateDto;
@@ -196,6 +197,30 @@ public class ApiServiceClient {
       logger.error("HTTP error while notifying sbps-api: {} {}", e.getStatusCode(), e.getMessage());
     } catch (Exception e) {
       logger.error("Error while notifying sbps-api", e);
+    }
+  }
+
+  public void notifyBalancerAction(BalancerActionDto actionDto) {
+    try {
+      logger.debug(
+          "Notifying sbps-api of balancer action {} for device {}",
+          actionDto.getAction(),
+          actionDto.getDeviceName());
+      String url = baseUrl + "/api/control/internal/balancer-action";
+
+      exchangeWithRetry(url, HttpMethod.POST, actionDto, Void.class);
+
+      logger.debug(
+          "Successfully notified sbps-api of balancer action for device {}",
+          actionDto.getDeviceName());
+
+    } catch (HttpClientErrorException e) {
+      logger.error(
+          "HTTP error while notifying sbps-api of balancer action: {} {}",
+          e.getStatusCode(),
+          e.getMessage());
+    } catch (Exception e) {
+      logger.error("Error while notifying sbps-api of balancer action", e);
     }
   }
 }

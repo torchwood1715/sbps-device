@@ -1,11 +1,13 @@
 package com.yh.sbps.device.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.yh.sbps.device.dto.BalancerActionDto;
 import com.yh.sbps.device.dto.DeviceDto;
 import com.yh.sbps.device.dto.SystemSettingsDto;
 import com.yh.sbps.device.dto.SystemStateDto;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
+import com.yh.sbps.device.integration.ApiServiceClient;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -25,13 +27,17 @@ public class BalancingService {
   private static final String SWITCHABLE_APPLIANCE = "SWITCHABLE_APPLIANCE";
   private static final int DEFAULT_POWER_ON_MARGIN_WATTS = 100;
 
-  private final DeviceStatusService deviceStatusService;
   private final Map<String, LocalDateTime> lastOverloadTimeByMqttPrefix = new ConcurrentHashMap<>();
+  private final DeviceStatusService deviceStatusService;
+  private final ApiServiceClient apiServiceClient;
   private final SystemStateCache systemStateCache;
   @Setter private ShellyService shellyService; // Lazy injection
 
   public BalancingService(
-      DeviceStatusService deviceStatusService, SystemStateCache systemStateCache) {
+      DeviceStatusService deviceStatusService,
+      ApiServiceClient apiServiceClient,
+      SystemStateCache systemStateCache) {
+    this.apiServiceClient = apiServiceClient;
     this.systemStateCache = systemStateCache;
     this.deviceStatusService = deviceStatusService;
   }
@@ -367,12 +373,16 @@ public class BalancingService {
     Objects.requireNonNull(shellyService, SHELLY_SERVICE_ERROR);
     shellyService.sendCommand(device.getMqttPrefix(), true);
     deviceStatusService.updateControlState(device.getId(), DeviceControlState.ENABLED);
+    apiServiceClient.notifyBalancerAction(
+        new BalancerActionDto(device.getId(), device.getName(), "ENABLED_BY_BALANCER"));
   }
 
   private void turnOffDevice(DeviceDto device) {
     Objects.requireNonNull(shellyService, SHELLY_SERVICE_ERROR);
     shellyService.sendCommand(device.getMqttPrefix(), false);
     deviceStatusService.updateControlState(device.getId(), DeviceControlState.DISABLED_BY_BALANCER);
+    apiServiceClient.notifyBalancerAction(
+        new BalancerActionDto(device.getId(), device.getName(), "DISABLED_BY_BALANCER"));
   }
 
   private boolean hasDowntimeExpired(DeviceDto device) {
