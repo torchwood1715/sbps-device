@@ -79,6 +79,7 @@ public class DeviceStartup implements SmartLifecycle {
   public void stop() {
     this.isRunning = false;
     logger.info("Stopping device subscriptions (SmartLifecycle)...");
+    this.shellyService.unsubscribeForAllDevices();
   }
 
   @Override

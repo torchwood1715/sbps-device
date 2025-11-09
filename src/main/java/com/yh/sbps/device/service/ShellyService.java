@@ -268,4 +268,8 @@ public class ShellyService {
     mqttPrefixToDeviceIdMap.put(device.getMqttPrefix(), device.getId());
     logger.info("Refreshed device cache for: {}", device.getName());
   }
+
+  public void unsubscribeForAllDevices() {
+    subscribedAdapters.forEach((prefix, adapter) -> unsubscribeFromDevice(prefix));
+  }
 }
