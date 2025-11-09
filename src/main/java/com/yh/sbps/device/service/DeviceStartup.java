@@ -5,18 +5,18 @@ import com.yh.sbps.device.integration.ApiServiceClient;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
 @Component
-public class DeviceStartup {
+public class DeviceStartup implements SmartLifecycle {
 
   private static final Logger logger = LoggerFactory.getLogger(DeviceStartup.class);
 
   private final ApiServiceClient apiServiceClient;
   private final ShellyService shellyService;
   private final SystemStateCache systemStateCache;
+  private volatile boolean isRunning = false;
 
   public DeviceStartup(
       ApiServiceClient apiServiceClient,
@@ -27,10 +27,10 @@ public class DeviceStartup {
     this.systemStateCache = systemStateCache;
   }
 
-  @EventListener(ApplicationReadyEvent.class)
-  public void initializeDeviceSubscriptions() {
-    logger.info("Starting device initialization and MQTT subscription process...");
-
+  @Override
+  public void start() {
+    logger.info("Starting device initialization and MQTT subscription process (SmartLifecycle)...");
+    this.isRunning = true;
     try {
       List<DeviceDto> devices = apiServiceClient.getAllDevices();
 
@@ -73,5 +73,16 @@ public class DeviceStartup {
     } catch (Exception e) {
       logger.error("Failed to initialize device subscriptions", e);
     }
+  }
+
+  @Override
+  public void stop() {
+    this.isRunning = false;
+    logger.info("Stopping device subscriptions (SmartLifecycle)...");
+  }
+
+  @Override
+  public boolean isRunning() {
+    return this.isRunning;
   }
 }
