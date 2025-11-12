@@ -174,11 +174,20 @@ public class BalancingService {
 
     double newTotalPower = currentTotalPower - powerShed;
     if (newTotalPower > powerLimitWatts) {
-      logger.error(
-          "OVERLOAD FAILED! Shed {} W, but new power {} W is still > limit {} W.",
-          powerShed,
-          newTotalPower,
-          powerLimitWatts);
+      if (powerShed > 0) {
+        logger.error(
+            "OVERLOAD FAILED! Shed {} W, but new power {} W is still > limit {} W. "
+                + "Check device priorities and wattages.",
+            powerShed,
+            newTotalPower,
+            powerLimitWatts);
+      } else {
+        logger.warn(
+            "Overload active ({} W > {} W), but no devices were available to shed. "
+                + "All controllable devices may already be off.",
+            currentTotalPower,
+            powerLimitWatts);
+      }
     } else {
       logger.info("Overload handled. Shed {} W. New power: {} W.", powerShed, newTotalPower);
     }
