@@ -71,36 +71,37 @@ public class ShellyService {
     String topic = (String) message.getHeaders().get(MqttHeaders.RECEIVED_TOPIC);
     String payload = String.valueOf(message.getPayload());
     logger.debug("MQTT IN: Topic={}, Payload={}", topic, payload);
-    long startTime = System.nanoTime();
-
     try {
       if (topic.endsWith("/online")) {
         String mqttPrefix = topic.substring(0, topic.lastIndexOf("/online"));
         boolean online = Boolean.parseBoolean(payload);
-        handleOnlineStatus(mqttPrefix, online, startTime);
+        handleOnlineStatus(mqttPrefix, online);
       } else if (topic.endsWith("/status/switch:0")) {
         String mqttPrefix = topic.substring(0, topic.indexOf("/status"));
         JsonNode json = objectMapper.readTree(payload);
-        handleDeviceStatus(mqttPrefix, json, startTime);
+        handleDeviceStatus(mqttPrefix, json);
       } else if (topic.endsWith("/events/rpc")) {
         String mqttPrefix = topic.substring(0, topic.indexOf("/events"));
         JsonNode json = objectMapper.readTree(payload);
         Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
-        if (deviceId != null) {
-          stateCache.updateEvent(deviceId, json, mqttPrefix);
-          deviceStatusService.updateEvent(deviceId, json, mqttPrefix);
-          if (logger.isDebugEnabled()) {
-            long duration = (System.nanoTime() - startTime) / 1_000_000;
-            logger.debug("Processed event for {} in {}ms", mqttPrefix, duration);
-          }
+        if (deviceId == null) return;
+        if (json.has("method")
+            && "NotifyStatus".equals(json.get("method").asText())
+            && json.has("params")
+            && json.get("params").has("switch:0")
+            && json.get("params").get("switch:0").has("apower")) {
+          logger.debug("Got power data from NotifyStatus (events/rpc) for {}", mqttPrefix);
+          JsonNode statusPayload = json.get("params").get("switch:0");
+          handleDeviceStatus(mqttPrefix, statusPayload);
         }
+        deviceStatusService.updateEvent(deviceId, json, mqttPrefix);
       }
     } catch (Exception e) {
       logger.error("Error parsing MQTT payload", e);
     }
   }
 
-  private void handleOnlineStatus(String mqttPrefix, boolean online, long startTime) {
+  private void handleOnlineStatus(String mqttPrefix, boolean online) {
     DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
     if (device != null) {
       stateCache.updateOnline(device.getId(), online, mqttPrefix);
@@ -109,24 +110,16 @@ public class ShellyService {
         apiServiceClient.notifyApiOfDeviceUpdate(
             new DeviceStatusUpdateDto(device.getId(), device.getUsername(), online, null));
       }
-      if (logger.isDebugEnabled()) {
-        long duration = (System.nanoTime() - startTime) / 1_000_000;
-        logger.debug("Processed online status for {} in {}ms", mqttPrefix, duration);
-      }
     }
   }
 
-  private void handleDeviceStatus(String mqttPrefix, JsonNode json, long startTime) {
+  private void handleDeviceStatus(String mqttPrefix, JsonNode json) {
     DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
     if (device == null) return;
     stateCache.updateStatus(device.getId(), json, mqttPrefix);
     if (DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
       if (balancingService != null) {
         balancingService.balancePower(mqttPrefix, json);
-        if (logger.isDebugEnabled()) {
-          long duration = (System.nanoTime() - startTime) / 1_000_000;
-          logger.debug("Power balancing triggered for {} in {}ms", mqttPrefix, duration);
-        }
       } else {
         logger.warn("BalancingService not initialized. Cannot perform power balancing.");
       }
@@ -137,7 +130,6 @@ public class ShellyService {
 
   @Async
   public void performPostProcessing(String mqttPrefix, JsonNode json, DeviceDto device) {
-    long startTime = System.nanoTime();
     if (device == null) {
       // Re-fetch if it wasn't passed in
       device = getDeviceByMqttPrefix(mqttPrefix);
@@ -148,10 +140,6 @@ public class ShellyService {
       if (device.getUsername() != null) {
         apiServiceClient.notifyApiOfDeviceUpdate(
             new DeviceStatusUpdateDto(device.getId(), device.getUsername(), null, json));
-      }
-      if (logger.isDebugEnabled()) {
-        long duration = (System.nanoTime() - startTime) / 1_000_000;
-        logger.debug("Async post-processing for {} completed in {}ms", mqttPrefix, duration);
       }
     }
   }

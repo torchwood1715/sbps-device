@@ -23,8 +23,7 @@ import org.springframework.stereotype.Service;
 public class BalancingService {
 
   private static final Logger logger = LoggerFactory.getLogger(BalancingService.class);
-  private static final String SHELLY_SERVICE_ERROR =
-      "ShellyService not wired in BalancingService!)";
+  private static final String SHELLY_SERVICE_ERROR = "ShellyService not wired in BalancingService!";
   private static final String SWITCHABLE_APPLIANCE = "SWITCHABLE_APPLIANCE";
   private static final int DEFAULT_POWER_ON_MARGIN_WATTS = 100;
 
@@ -47,7 +46,6 @@ public class BalancingService {
   }
 
   public void balancePower(String mqttPrefix, JsonNode powerMonitorStatus) {
-    long startTime = System.nanoTime();
     try {
       // Step 1: Get current power
       Double currentTotalPower = extractPowerConsumption(powerMonitorStatus);
@@ -76,19 +74,13 @@ public class BalancingService {
               : DEFAULT_POWER_ON_MARGIN_WATTS;
 
       // Step 3: OVERLOAD logic
-      long overloadStart = System.nanoTime();
       double powerAfterOverload =
           handleOverload(currentTotalPower, powerLimitWatts, systemState.getDevices(), mqttPrefix);
-      long overloadEnd = System.nanoTime();
 
       // Step 4: PREVENT DOWNTIME logic
-      long downtimeStart = System.nanoTime();
       double powerAfterDowntimePrevention =
           handlePreventDowntime(
               powerAfterOverload, powerLimitWatts, powerOnMargin, systemState.getDevices());
-      long downtimeEnd = System.nanoTime();
-
-      long restoreStart = System.nanoTime();
       int overloadCooldownSeconds =
           settings.getOverloadCooldownSeconds() != null ? settings.getOverloadCooldownSeconds() : 0;
       handleRestore(
@@ -98,16 +90,6 @@ public class BalancingService {
           overloadCooldownSeconds,
           systemState.getDevices(),
           mqttPrefix);
-      long restoreEnd = System.nanoTime();
-      long totalTime = (System.nanoTime() - startTime) / 1_000_000;
-      if (logger.isDebugEnabled()) {
-        logger.debug(
-            "Balancing completed in {} ms [Overload: {}ms, Downtime: {}ms, Restore: {}ms]",
-            totalTime,
-            (overloadEnd - overloadStart) / 1_000_000,
-            (downtimeEnd - downtimeStart) / 1_000_000,
-            (restoreEnd - restoreStart) / 1_000_000);
-      }
     } catch (Exception e) {
       logger.error("Error during power balancing for MQTT prefix: {}", mqttPrefix, e);
     }
@@ -294,7 +276,7 @@ public class BalancingService {
           powerAfterChanges += powerNeeded;
 
         } else {
-          logger.error(
+          logger.warn(
               "CANNOT FORCE ON '{}': No sacrificial devices found to free {} W.",
               deviceToOn.getName(),
               powerToFree);
