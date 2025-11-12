@@ -17,10 +17,10 @@ import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannel
 import org.springframework.integration.mqtt.outbound.MqttPahoMessageHandler;
 import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.integration.mqtt.support.MqttHeaders;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -39,6 +39,7 @@ public class ShellyService {
       new ConcurrentHashMap<>();
   private final Map<String, Long> mqttPrefixToDeviceIdMap = new ConcurrentHashMap<>();
   private final Map<String, DeviceDto> deviceCache = new ConcurrentHashMap<>();
+  private final DeviceRealtimeStateCache stateCache;
 
   /**
    * -- SETTER -- Setter for BalancingService to avoid circular dependency. Spring will inject this
@@ -51,13 +52,15 @@ public class ShellyService {
       MessageChannel mqttInputChannel,
       ObjectMapper objectMapper,
       DeviceStatusService deviceStatusService,
-      ApiServiceClient apiServiceClient) {
+      ApiServiceClient apiServiceClient,
+      DeviceRealtimeStateCache stateCache) {
     this.mqttClientFactory = mqttClientFactory;
     this.mqttInputChannel = mqttInputChannel;
     this.objectMapper = objectMapper;
     this.deviceStatusService = deviceStatusService;
     this.apiServiceClient = apiServiceClient;
     this.mqttOutbound = new MqttPahoMessageHandler("shellyOutbound", mqttClientFactory);
+    this.stateCache = stateCache;
     mqttOutbound.setAsync(false);
     mqttOutbound.setConverter(new DefaultPahoMessageConverter());
     mqttOutbound.afterPropertiesSet();
@@ -84,6 +87,7 @@ public class ShellyService {
         JsonNode json = objectMapper.readTree(payload);
         Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
         if (deviceId != null) {
+          stateCache.updateEvent(deviceId, json, mqttPrefix);
           deviceStatusService.updateEvent(deviceId, json, mqttPrefix);
           if (logger.isDebugEnabled()) {
             long duration = (System.nanoTime() - startTime) / 1_000_000;
@@ -99,6 +103,7 @@ public class ShellyService {
   private void handleOnlineStatus(String mqttPrefix, boolean online, long startTime) {
     DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
     if (device != null) {
+      stateCache.updateOnline(device.getId(), online, mqttPrefix);
       deviceStatusService.updateOnline(device.getId(), online, mqttPrefix);
       if (device.getUsername() != null) {
         apiServiceClient.notifyApiOfDeviceUpdate(
@@ -113,7 +118,9 @@ public class ShellyService {
 
   private void handleDeviceStatus(String mqttPrefix, JsonNode json, long startTime) {
     DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
-    if (device != null && DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
+    if (device == null) return;
+    stateCache.updateStatus(device.getId(), json, mqttPrefix);
+    if (DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
       if (balancingService != null) {
         balancingService.balancePower(mqttPrefix, json);
         if (logger.isDebugEnabled()) {
@@ -125,7 +132,6 @@ public class ShellyService {
       }
     }
 
-    // Asynchronously update status and notify API to not block the MQTT thread
     performPostProcessing(mqttPrefix, json, device);
   }
 

@@ -1,6 +1,7 @@
 package com.yh.sbps.device.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.dto.BalancerActionDto;
 import com.yh.sbps.device.dto.DeviceDto;
 import com.yh.sbps.device.dto.SystemSettingsDto;
@@ -28,21 +29,25 @@ public class BalancingService {
   private static final int DEFAULT_POWER_ON_MARGIN_WATTS = 100;
 
   private final Map<String, LocalDateTime> lastOverloadTimeByMqttPrefix = new ConcurrentHashMap<>();
+  private final DeviceRealtimeStateCache stateCache;
   private final DeviceStatusService deviceStatusService;
   private final ApiServiceClient apiServiceClient;
   private final SystemStateCache systemStateCache;
   @Setter private ShellyService shellyService; // Lazy injection
 
   public BalancingService(
+      DeviceRealtimeStateCache stateCache,
       DeviceStatusService deviceStatusService,
       ApiServiceClient apiServiceClient,
       SystemStateCache systemStateCache) {
+    this.deviceStatusService = deviceStatusService;
     this.apiServiceClient = apiServiceClient;
     this.systemStateCache = systemStateCache;
-    this.deviceStatusService = deviceStatusService;
+    this.stateCache = stateCache;
   }
 
   public void balancePower(String mqttPrefix, JsonNode powerMonitorStatus) {
+    long startTime = System.nanoTime();
     try {
       // Step 1: Get current power
       Double currentTotalPower = extractPowerConsumption(powerMonitorStatus);
@@ -71,14 +76,19 @@ public class BalancingService {
               : DEFAULT_POWER_ON_MARGIN_WATTS;
 
       // Step 3: OVERLOAD logic
+      long overloadStart = System.nanoTime();
       double powerAfterOverload =
           handleOverload(currentTotalPower, powerLimitWatts, systemState.getDevices(), mqttPrefix);
+      long overloadEnd = System.nanoTime();
 
       // Step 4: PREVENT DOWNTIME logic
+      long downtimeStart = System.nanoTime();
       double powerAfterDowntimePrevention =
           handlePreventDowntime(
               powerAfterOverload, powerLimitWatts, powerOnMargin, systemState.getDevices());
+      long downtimeEnd = System.nanoTime();
 
+      long restoreStart = System.nanoTime();
       int overloadCooldownSeconds =
           settings.getOverloadCooldownSeconds() != null ? settings.getOverloadCooldownSeconds() : 0;
       handleRestore(
@@ -88,7 +98,16 @@ public class BalancingService {
           overloadCooldownSeconds,
           systemState.getDevices(),
           mqttPrefix);
-
+      long restoreEnd = System.nanoTime();
+      long totalTime = (System.nanoTime() - startTime) / 1_000_000;
+      if (logger.isDebugEnabled()) {
+        logger.debug(
+            "Balancing completed in {} ms [Overload: {}ms, Downtime: {}ms, Restore: {}ms]",
+            totalTime,
+            (overloadEnd - overloadStart) / 1_000_000,
+            (downtimeEnd - downtimeStart) / 1_000_000,
+            (restoreEnd - restoreStart) / 1_000_000);
+      }
     } catch (Exception e) {
       logger.error("Error during power balancing for MQTT prefix: {}", mqttPrefix, e);
     }
@@ -101,12 +120,15 @@ public class BalancingService {
 
   private double getActualPower(Long deviceId) {
     try {
-      JsonNode statusNode = deviceStatusService.getStatusAsJsonNode(deviceId);
+      Optional<DeviceStatus> statusOpt = stateCache.get(deviceId);
+      if (statusOpt.isEmpty() || statusOpt.get().getLastStatusJson() == null) return 0.0;
+      JsonNode statusNode = new ObjectMapper().readTree(statusOpt.get().getLastStatusJson());
+
       if (statusNode != null && statusNode.has("apower")) {
         return statusNode.get("apower").asDouble(0.0);
       }
     } catch (Exception e) {
-      logger.error("Error getting actual power for device {}", deviceId, e);
+      logger.error("Error getting actual power from cache for device {}", deviceId, e);
     }
     return 0.0;
   }
@@ -370,6 +392,7 @@ public class BalancingService {
   private void turnOnDevice(DeviceDto device) {
     Objects.requireNonNull(shellyService, SHELLY_SERVICE_ERROR);
     shellyService.sendCommand(device.getMqttPrefix(), true);
+    stateCache.updateControlState(device.getId(), DeviceControlState.ENABLED);
     deviceStatusService.updateControlState(device.getId(), DeviceControlState.ENABLED);
     apiServiceClient.notifyBalancerAction(
         new BalancerActionDto(device.getId(), device.getName(), "ENABLED_BY_BALANCER"));
@@ -378,6 +401,7 @@ public class BalancingService {
   private void turnOffDevice(DeviceDto device) {
     Objects.requireNonNull(shellyService, SHELLY_SERVICE_ERROR);
     shellyService.sendCommand(device.getMqttPrefix(), false);
+    stateCache.updateControlState(device.getId(), DeviceControlState.DISABLED_BY_BALANCER);
     deviceStatusService.updateControlState(device.getId(), DeviceControlState.DISABLED_BY_BALANCER);
     apiServiceClient.notifyBalancerAction(
         new BalancerActionDto(device.getId(), device.getName(), "DISABLED_BY_BALANCER"));
@@ -387,7 +411,10 @@ public class BalancingService {
     if (device.getMaxDowntimeMinutes() == null || device.getMaxDowntimeMinutes() <= 0) {
       return false; // Downtime isn't configured
     }
-    LocalDateTime disabledAt = deviceStatusService.getBalancerDisabledAt(device.getId());
+
+    LocalDateTime disabledAt =
+        stateCache.get(device.getId()).map(DeviceStatus::getBalancerDisabledAt).orElse(null);
+
     if (disabledAt == null) {
       return false; // Not disabled by balancer
     }
@@ -418,25 +445,29 @@ public class BalancingService {
 
   private boolean isDeviceOnlineAndOn(DeviceDto device) {
     try {
-      Optional<DeviceStatus> statusOpt = deviceStatusService.findByDeviceId(device.getId());
+      Optional<DeviceStatus> statusOpt = stateCache.get(device.getId());
       if (statusOpt.isEmpty()) return false;
       DeviceStatus status = statusOpt.get();
       if (status.getLastOnline() == null || !status.getLastOnline()) return false;
+      if (status.getLastStatusJson() == null) return false;
 
-      JsonNode statusNode = deviceStatusService.getStatusAsJsonNode(device.getId());
+      JsonNode statusNode = new ObjectMapper().readTree(status.getLastStatusJson());
       return statusNode != null && statusNode.has("output") && statusNode.get("output").asBoolean();
     } catch (Exception e) {
-      logger.error("Error checking device status for: {}", device.getName(), e);
+      logger.error("Error checking device status from cache for: {}", device.getName(), e);
       return false;
     }
   }
 
   private boolean isDeviceDisabledByBalancer(Long deviceId) {
     try {
-      DeviceControlState controlState = deviceStatusService.getControlState(deviceId);
-      return DeviceControlState.DISABLED_BY_BALANCER.equals(controlState);
+      return stateCache
+          .get(deviceId)
+          .map(DeviceStatus::getControlState)
+          .map(DeviceControlState.DISABLED_BY_BALANCER::equals)
+          .orElse(false);
     } catch (Exception e) {
-      logger.error("Error checking control state for device ID: {}", deviceId, e);
+      logger.error("Error checking control state from cache for device ID: {}", deviceId, e);
       return false;
     }
   }
