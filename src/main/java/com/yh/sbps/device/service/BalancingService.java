@@ -55,8 +55,6 @@ public class BalancingService {
       Optional<SystemStateDto> systemStateOpt = systemStateCache.getState(mqttPrefix);
       if (systemStateOpt.isEmpty()) {
         logger.error("System state not found in cache for {}. Aborting balancing.", mqttPrefix);
-        // TODO maybe worth try to update state here?
-        // systemStateCache.refreshState(mqttPrefix);
         return;
       }
 

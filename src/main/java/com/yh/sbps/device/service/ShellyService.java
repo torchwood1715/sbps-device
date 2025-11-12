@@ -17,6 +17,7 @@ import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannel
 import org.springframework.integration.mqtt.outbound.MqttPahoMessageHandler;
 import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.integration.mqtt.support.MqttHeaders;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.MessageBuilder;
@@ -67,54 +68,85 @@ public class ShellyService {
     String topic = (String) message.getHeaders().get(MqttHeaders.RECEIVED_TOPIC);
     String payload = String.valueOf(message.getPayload());
     logger.debug("MQTT IN: Topic={}, Payload={}", topic, payload);
+    long startTime = System.nanoTime();
 
     try {
       if (topic.endsWith("/online")) {
         String mqttPrefix = topic.substring(0, topic.lastIndexOf("/online"));
         boolean online = Boolean.parseBoolean(payload);
-        Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
-        if (deviceId != null) {
-          deviceStatusService.updateOnline(deviceId, online, mqttPrefix);
-          DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
-          if (device != null && device.getUsername() != null) {
-            apiServiceClient.notifyApiOfDeviceUpdate(
-                new DeviceStatusUpdateDto(deviceId, device.getUsername(), online, null));
-          }
-        }
+        handleOnlineStatus(mqttPrefix, online, startTime);
       } else if (topic.endsWith("/status/switch:0")) {
         String mqttPrefix = topic.substring(0, topic.indexOf("/status"));
         JsonNode json = objectMapper.readTree(payload);
-        Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
-        if (deviceId != null) {
-          deviceStatusService.updateStatus(deviceId, json, mqttPrefix);
-          DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
-          if (device != null && device.getUsername() != null) {
-            apiServiceClient.notifyApiOfDeviceUpdate(
-                new DeviceStatusUpdateDto(deviceId, device.getUsername(), null, json));
-          }
-
-          // Check if this is a POWER_MONITOR device and trigger balancing logic
-          if (device != null && DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
-            logger.debug(
-                "Power monitor device '{}' reported status. Triggering balancing logic.",
-                device.getName());
-            if (balancingService != null) {
-              balancingService.balancePower(mqttPrefix, json);
-            } else {
-              logger.warn("BalancingService not initialized. Cannot perform power balancing.");
-            }
-          }
-        }
+        handleDeviceStatus(mqttPrefix, json, startTime);
       } else if (topic.endsWith("/events/rpc")) {
         String mqttPrefix = topic.substring(0, topic.indexOf("/events"));
         JsonNode json = objectMapper.readTree(payload);
         Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
         if (deviceId != null) {
           deviceStatusService.updateEvent(deviceId, json, mqttPrefix);
+          if (logger.isDebugEnabled()) {
+            long duration = (System.nanoTime() - startTime) / 1_000_000;
+            logger.debug("Processed event for {} in {}ms", mqttPrefix, duration);
+          }
         }
       }
     } catch (Exception e) {
       logger.error("Error parsing MQTT payload", e);
+    }
+  }
+
+  private void handleOnlineStatus(String mqttPrefix, boolean online, long startTime) {
+    DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
+    if (device != null) {
+      deviceStatusService.updateOnline(device.getId(), online, mqttPrefix);
+      if (device.getUsername() != null) {
+        apiServiceClient.notifyApiOfDeviceUpdate(
+            new DeviceStatusUpdateDto(device.getId(), device.getUsername(), online, null));
+      }
+      if (logger.isDebugEnabled()) {
+        long duration = (System.nanoTime() - startTime) / 1_000_000;
+        logger.debug("Processed online status for {} in {}ms", mqttPrefix, duration);
+      }
+    }
+  }
+
+  private void handleDeviceStatus(String mqttPrefix, JsonNode json, long startTime) {
+    DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
+    if (device != null && DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
+      if (balancingService != null) {
+        balancingService.balancePower(mqttPrefix, json);
+        if (logger.isDebugEnabled()) {
+          long duration = (System.nanoTime() - startTime) / 1_000_000;
+          logger.debug("Power balancing triggered for {} in {}ms", mqttPrefix, duration);
+        }
+      } else {
+        logger.warn("BalancingService not initialized. Cannot perform power balancing.");
+      }
+    }
+
+    // Asynchronously update status and notify API to not block the MQTT thread
+    performPostProcessing(mqttPrefix, json, device);
+  }
+
+  @Async
+  public void performPostProcessing(String mqttPrefix, JsonNode json, DeviceDto device) {
+    long startTime = System.nanoTime();
+    if (device == null) {
+      // Re-fetch if it wasn't passed in
+      device = getDeviceByMqttPrefix(mqttPrefix);
+    }
+
+    if (device != null) {
+      deviceStatusService.updateStatus(device.getId(), json, mqttPrefix);
+      if (device.getUsername() != null) {
+        apiServiceClient.notifyApiOfDeviceUpdate(
+            new DeviceStatusUpdateDto(device.getId(), device.getUsername(), null, json));
+      }
+      if (logger.isDebugEnabled()) {
+        long duration = (System.nanoTime() - startTime) / 1_000_000;
+        logger.debug("Async post-processing for {} completed in {}ms", mqttPrefix, duration);
+      }
     }
   }
 

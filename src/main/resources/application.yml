@@ -39,4 +39,4 @@ jwt:
 logging:
   level:
     root: WARN
-    com.yh.sbps: INFO
+    com.yh.sbps: ${LOGGING_LEVEL_COM_YH_SBPS:INFO}
