@@ -18,32 +18,34 @@ import com.yh.sbps.device.service.SystemStateCache;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import java.util.Collections;
 
-@WebMvcTest(DeviceController.class)
+@ExtendWith(MockitoExtension.class)
 @DisplayName("DeviceController Unit Tests")
 class DeviceControllerTest {
 
-  @Autowired private MockMvc mockMvc;
+  private MockMvc mockMvc;
+  private ObjectMapper objectMapper;
+  private DeviceController controller;
 
-  @Autowired private ObjectMapper objectMapper;
-
-  @MockitoBean private ShellyService shellyService;
-
-  @MockitoBean private ApiServiceClient apiServiceClient;
-
-  @MockitoBean private DeviceStatusService deviceStatusService;
-
-  @MockitoBean private SystemStateCache systemStateCache;
+  @Mock private ShellyService shellyService;
+  @Mock private DeviceStatusService deviceStatusService;
+  @Mock private SystemStateCache systemStateCache;
 
   private DeviceDto testDevice;
 
   @BeforeEach
   void setUp() {
+    objectMapper = new ObjectMapper();
+    controller = new DeviceController(shellyService, deviceStatusService, systemStateCache);
+    mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+
     testDevice =
         new DeviceDto(
             1L,
@@ -91,8 +93,9 @@ class DeviceControllerTest {
 
   @Test
   void testTogglePlug_DeviceNotFound() throws Exception {
-    // Arrange
-    when(apiServiceClient.getDeviceById(1L)).thenReturn(Optional.empty());
+    // Arrange: cache doesn't have the device, DB lookup also misses
+    when(systemStateCache.getStateCache()).thenReturn(Collections.emptyMap());
+    when(deviceStatusService.findMqttPrefixById(1L)).thenReturn(Optional.empty());
 
     // Act & Assert
     mockMvc

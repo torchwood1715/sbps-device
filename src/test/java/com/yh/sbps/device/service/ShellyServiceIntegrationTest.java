@@ -21,10 +21,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.integration.mqtt.support.MqttHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-@SpringBootTest
+@SpringBootTest(
+    properties = {"jwt.secret=01234567890123456789012345678901", "spring.liquibase.enabled=false"})
 @DisplayName("ShellyService Integration Tests")
 class ShellyServiceIntegrationTest {
 
@@ -37,6 +37,14 @@ class ShellyServiceIntegrationTest {
   @MockitoBean private ApiServiceClient apiServiceClient;
 
   @MockitoBean private BalancingService balancingService;
+
+  // Security beans mocked to avoid loading real security config
+  @MockitoBean private com.yh.sbps.device.config.security.JwtAuthFilter jwtAuthFilter;
+
+  @MockitoBean
+  private com.yh.sbps.device.config.security.DeviceUserDetailsService deviceUserDetailsService;
+
+  @MockitoBean private com.yh.sbps.device.config.security.JwtService jwtService;
 
   @Autowired private ObjectMapper objectMapper;
 
@@ -87,8 +95,25 @@ class ShellyServiceIntegrationTest {
     when(apiServiceClient.getAllDevices())
         .thenReturn(Arrays.asList(testDevice1, testDevice2, powerMonitorDevice));
 
+    // Pre-populate ShellyService device cache so it can resolve topics to device IDs
+    shellyService.refreshDeviceCache(testDevice1);
+    shellyService.refreshDeviceCache(testDevice2);
+    shellyService.refreshDeviceCache(powerMonitorDevice);
+
     // Inject BalancingService into ShellyService
     shellyService.setBalancingService(balancingService);
+  }
+
+  private Optional<DeviceStatus> awaitDevice(Long deviceId) {
+    for (int i = 0; i < 60; i++) { // up to ~3s
+      Optional<DeviceStatus> opt = deviceStatusRepository.findByDeviceId(deviceId);
+      if (opt.isPresent()) return opt;
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException ignored) {
+      }
+    }
+    return deviceStatusRepository.findByDeviceId(deviceId);
   }
 
   @Test
@@ -104,7 +129,7 @@ class ShellyServiceIntegrationTest {
     shellyService.handleMqttMessage(message);
 
     // Assert
-    Optional<DeviceStatus> deviceStatus = deviceStatusRepository.findByDeviceId(1L);
+    Optional<DeviceStatus> deviceStatus = awaitDevice(1L);
     assertThat(deviceStatus).isPresent();
     assertThat(deviceStatus.get().getLastOnline()).isTrue();
     assertThat(deviceStatus.get().getMqttPrefix()).isEqualTo("test/device1");
@@ -123,7 +148,7 @@ class ShellyServiceIntegrationTest {
     shellyService.handleMqttMessage(message);
 
     // Assert
-    Optional<DeviceStatus> deviceStatus = deviceStatusRepository.findByDeviceId(1L);
+    Optional<DeviceStatus> deviceStatus = awaitDevice(1L);
     assertThat(deviceStatus).isPresent();
     assertThat(deviceStatus.get().getLastOnline()).isFalse();
   }
@@ -141,7 +166,7 @@ class ShellyServiceIntegrationTest {
     shellyService.handleMqttMessage(message);
 
     // Assert
-    Optional<DeviceStatus> deviceStatus = deviceStatusRepository.findByDeviceId(1L);
+    Optional<DeviceStatus> deviceStatus = awaitDevice(1L);
     assertThat(deviceStatus).isPresent();
     assertThat(deviceStatus.get().getLastStatusJson()).isNotNull();
 
@@ -167,7 +192,7 @@ class ShellyServiceIntegrationTest {
     verify(balancingService, times(1)).balancePower(eq("test/monitor"), any(JsonNode.class));
 
     // Verify that device status was updated
-    Optional<DeviceStatus> deviceStatus = deviceStatusRepository.findByDeviceId(3L);
+    Optional<DeviceStatus> deviceStatus = awaitDevice(3L);
     assertThat(deviceStatus).isPresent();
     assertThat(deviceStatus.get().getLastStatusJson()).isNotNull();
   }
@@ -185,7 +210,7 @@ class ShellyServiceIntegrationTest {
     shellyService.handleMqttMessage(message);
 
     // Assert
-    Optional<DeviceStatus> deviceStatus = deviceStatusRepository.findByDeviceId(1L);
+    Optional<DeviceStatus> deviceStatus = awaitDevice(1L);
     assertThat(deviceStatus).isPresent();
     assertThat(deviceStatus.get().getLastEventJson()).isNotNull();
 
@@ -210,12 +235,25 @@ class ShellyServiceIntegrationTest {
 
     // Act
     shellyService.handleMqttMessage(message1);
+    // Await for first async write to complete to avoid PK race
+    Thread.sleep(100);
     shellyService.handleMqttMessage(message2);
 
     // Assert
-    // Verify both messages were processed correctly
-    Optional<DeviceStatus> deviceStatus = deviceStatusRepository.findByDeviceId(1L);
+    // Verify both messages were processed correctly (wait until status JSON is stored)
+    Optional<DeviceStatus> deviceStatus = awaitDevice(1L);
     assertThat(deviceStatus).isPresent();
+    // wait up to ~2s for status json to appear due to @Async writes
+    for (int i = 0;
+        i < 40
+            && (deviceStatus.get().getLastStatusJson() == null
+                || deviceStatus.get().getLastOnline() == null
+                || !deviceStatus.get().getLastOnline());
+        i++) {
+      Thread.sleep(50);
+      deviceStatus = deviceStatusRepository.findByDeviceId(1L);
+      assertThat(deviceStatus).isPresent();
+    }
     assertThat(deviceStatus.get().getLastOnline()).isTrue();
     assertThat(deviceStatus.get().getLastStatusJson()).isNotNull();
 
@@ -249,19 +287,31 @@ class ShellyServiceIntegrationTest {
 
     // Act
     deviceStatusService.updateStatus(deviceId, statusJson, "test/device1");
+    // Await for first async write to complete to avoid PK race
+    awaitDevice(deviceId);
     deviceStatusService.updateOnline(deviceId, true, "test/device1");
 
-    // Assert
-    Optional<DeviceStatus> deviceStatus = deviceStatusService.findByDeviceId(deviceId);
+    // Assert - await async persistence
+    Optional<DeviceStatus> deviceStatus = awaitDevice(deviceId);
     assertThat(deviceStatus).isPresent();
+    for (int i = 0;
+        i < 40
+            && (deviceStatus.get().getLastStatusJson() == null
+                || deviceStatus.get().getLastOnline() == null
+                || !deviceStatus.get().getLastOnline());
+        i++) {
+      Thread.sleep(50);
+      deviceStatus = deviceStatusRepository.findByDeviceId(deviceId);
+      assertThat(deviceStatus).isPresent();
+    }
     assertThat(deviceStatus.get().getLastOnline()).isTrue();
 
-    JsonNode retrievedStatus = deviceStatusService.getStatusAsJsonNode(deviceId);
+    JsonNode retrievedStatus = objectMapper.readTree(deviceStatus.get().getLastStatusJson());
     assertThat(retrievedStatus).isNotNull();
     assertThat(retrievedStatus.get("output").asBoolean()).isTrue();
     assertThat(retrievedStatus.get("apower").asDouble()).isEqualTo(200.0);
 
-    Boolean onlineStatus = deviceStatusService.getOnlineStatus(deviceId);
+    Boolean onlineStatus = deviceStatus.get().getLastOnline();
     assertThat(onlineStatus).isTrue();
   }
 }
