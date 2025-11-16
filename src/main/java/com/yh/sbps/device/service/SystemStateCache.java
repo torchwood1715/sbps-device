@@ -24,7 +24,10 @@ public class SystemStateCache {
   @Getter private final Map<String, SystemStateDto> stateCache = new ConcurrentHashMap<>();
 
   // key - mqttPrefix of any device, value - mqttPrefix of monitor
-  private final Map<String, String> deviceToMonitorMap = new ConcurrentHashMap<>();
+  @Getter private final Map<String, String> deviceToMonitorMap = new ConcurrentHashMap<>();
+
+  // key - mqttPrefix of monitor, value - grid status
+  private final Map<String, Boolean> gridStatusCache = new ConcurrentHashMap<>();
 
   public SystemStateCache(ApiServiceClient apiServiceClient, ShellyService shellyService) {
     this.apiServiceClient = apiServiceClient;
@@ -43,6 +46,8 @@ public class SystemStateCache {
 
       if (systemStateOpt.isPresent()) {
         SystemStateDto systemState = systemStateOpt.get();
+        boolean isGridAvailable = isGridAvailable(monitorMqttPrefix);
+        systemState.setGridPowerAvailable(isGridAvailable);
         stateCache.put(monitorMqttPrefix, systemState);
 
         updateDeviceToMonitorMap(monitorMqttPrefix, systemState);
@@ -64,6 +69,7 @@ public class SystemStateCache {
             "Could not find system state for monitor prefix: {}. Removing from cache.",
             monitorMqttPrefix);
         stateCache.remove(monitorMqttPrefix);
+        gridStatusCache.remove(monitorMqttPrefix);
         updateDeviceToMonitorMap(monitorMqttPrefix, null);
       }
     } catch (Exception e) {
@@ -86,16 +92,36 @@ public class SystemStateCache {
                     .filter(device -> !deviceMqttPrefix.equals(device.getMqttPrefix()))
                     .collect(Collectors.toList());
 
-            return new SystemStateDto(oldState.getSystemSettings(), newDeviceList);
+            return new SystemStateDto(
+                oldState.getSystemSettings(), newDeviceList, oldState.isGridPowerAvailable());
           });
 
     } else {
       if (stateCache.remove(deviceMqttPrefix) != null) {
         logger.info("Monitor {} removed from state cache.", deviceMqttPrefix);
+        gridStatusCache.remove(deviceMqttPrefix);
       }
       updateDeviceToMonitorMap(deviceMqttPrefix, null);
     }
   }
+
+  public void updateGridStatus(String monitorMqttPrefix, boolean isAvailable) {
+    if (monitorMqttPrefix == null) return;
+    gridStatusCache.put(monitorMqttPrefix, isAvailable);
+    stateCache.computeIfPresent(
+        monitorMqttPrefix,
+        (key, state) -> {
+          state.setGridPowerAvailable(isAvailable);
+          return state;
+        });
+  }
+
+  public boolean isGridAvailable(String monitorMqttPrefix) {
+    if (monitorMqttPrefix == null) return true;
+    return gridStatusCache.getOrDefault(monitorMqttPrefix, true);
+  }
+
+
 
   private void updateDeviceToMonitorMap(String monitorPrefix, SystemStateDto state) {
     deviceToMonitorMap.values().removeIf(v -> v.equals(monitorPrefix));

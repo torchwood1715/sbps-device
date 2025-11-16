@@ -2,10 +2,7 @@ package com.yh.sbps.device.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yh.sbps.device.dto.BalancerActionDto;
-import com.yh.sbps.device.dto.DeviceDto;
-import com.yh.sbps.device.dto.SystemSettingsDto;
-import com.yh.sbps.device.dto.SystemStateDto;
+import com.yh.sbps.device.dto.*;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.integration.ApiServiceClient;
@@ -24,7 +21,7 @@ public class BalancingService {
 
   private static final Logger logger = LoggerFactory.getLogger(BalancingService.class);
   private static final String SHELLY_SERVICE_ERROR = "ShellyService not wired in BalancingService!";
-  private static final String SWITCHABLE_APPLIANCE = "SWITCHABLE_APPLIANCE";
+  private static final String SWITCHABLE_APPLIANCE = DeviceType.SWITCHABLE_APPLIANCE.name();
   private static final int DEFAULT_POWER_ON_MARGIN_WATTS = 100;
 
   private final Map<String, LocalDateTime> lastOverloadTimeByMqttPrefix = new ConcurrentHashMap<>();
@@ -67,28 +64,64 @@ public class BalancingService {
         logger.error("Power limit not configured. Aborting balancing.");
         return;
       }
-      int powerLimitWatts = settings.getPowerLimitWatts();
+
+      // Step 3: resolve effective limit
+      boolean isGridAvailable = systemState.isGridPowerAvailable();
+      boolean isVacationMode = settings.isVacationModeEnabled();
+      boolean isPowerSaveMode = isVacationMode || !isGridAvailable;
+      int effectivePowerLimit = settings.getPowerLimitWatts();
+      String modeLog = "NORMAL";
+
+      if (isPowerSaveMode
+          && settings.getPowerSaveLimitWatts() != null
+          && settings.getPowerSaveLimitWatts() > 0) {
+        effectivePowerLimit = settings.getPowerSaveLimitWatts();
+        modeLog = isVacationMode ? "VACATION" : "BLACKOUT";
+        logger.warn(
+            "POWER-SAVE MODE active ({}). Effective limit set to {} W",
+            modeLog,
+            effectivePowerLimit);
+      } else if (isPowerSaveMode) {
+        logger.warn(
+            "POWER-SAVE MODE ({}) active, but powerSaveLimitWatts is not configured. Using main limit {} W",
+            modeLog,
+            effectivePowerLimit);
+      }
+
       int powerOnMargin =
           settings.getPowerOnMarginWatts() != null
               ? settings.getPowerOnMarginWatts()
               : DEFAULT_POWER_ON_MARGIN_WATTS;
 
-      // Step 3: OVERLOAD logic
-      double powerAfterOverload =
-          handleOverload(currentTotalPower, powerLimitWatts, systemState.getDevices(), mqttPrefix);
+      List<DeviceDto> allDevices = systemState.getDevices();
+      double powerAfterChanges = currentTotalPower;
+      List<DeviceDto> manageableDevices;
 
-      // Step 4: PREVENT DOWNTIME logic
+      // Step 4:
+      if (isPowerSaveMode) {
+        powerAfterChanges = handlePowerSaveShed(currentTotalPower, allDevices);
+        manageableDevices =
+            allDevices.stream().filter(d -> !d.isNonEssential()).collect(Collectors.toList());
+      } else {
+        manageableDevices = allDevices;
+      }
+
+      // Step 5: OVERLOAD logic
+      double powerAfterOverload =
+          handleOverload(powerAfterChanges, effectivePowerLimit, manageableDevices, mqttPrefix);
+
+      // Step 6: PREVENT DOWNTIME logic
       double powerAfterDowntimePrevention =
           handlePreventDowntime(
-              powerAfterOverload, powerLimitWatts, powerOnMargin, systemState.getDevices());
+              powerAfterOverload, effectivePowerLimit, powerOnMargin, manageableDevices);
       int overloadCooldownSeconds =
           settings.getOverloadCooldownSeconds() != null ? settings.getOverloadCooldownSeconds() : 0;
       handleRestore(
           powerAfterDowntimePrevention,
-          powerLimitWatts,
+          effectivePowerLimit,
           powerOnMargin,
           overloadCooldownSeconds,
-          systemState.getDevices(),
+          manageableDevices,
           mqttPrefix);
     } catch (Exception e) {
       logger.error("Error during power balancing for MQTT prefix: {}", mqttPrefix, e);
@@ -115,10 +148,42 @@ public class BalancingService {
     return 0.0;
   }
 
+  private double handlePowerSaveShed(double currentTotalPower, List<DeviceDto> allDevices) {
+    double powerShed = 0;
+    List<DeviceDto> nonEssentialDevicesOn =
+        allDevices.stream()
+            .filter(DeviceDto::isNonEssential)
+            .filter(d -> d.getDeviceType() == DeviceType.SWITCHABLE_APPLIANCE)
+            .filter(this::isDeviceOnlineAndOn)
+            .toList();
+
+    if (nonEssentialDevicesOn.isEmpty()) {
+      return currentTotalPower;
+    }
+
+    logger.info(
+        "Power-Save Mode: Found {} non-essential devices to turn OFF.",
+        nonEssentialDevicesOn.size());
+
+    for (DeviceDto device : nonEssentialDevicesOn) {
+      logger.warn(
+          "Power-Save Mode: Turning OFF non-essential device '{}' (Priority: {})",
+          device.getName(),
+          device.getPriority());
+
+      turnOffDevice(device);
+      powerShed += getActualPower(device.getId());
+    }
+
+    double newTotalPower = currentTotalPower - powerShed;
+    logger.info("Power-Save shed {} W. New power: {} W.", powerShed, newTotalPower);
+    return newTotalPower;
+  }
+
   private double handleOverload(
       double currentTotalPower,
       int powerLimitWatts,
-      List<DeviceDto> allDevices,
+      List<DeviceDto> manageableDevices,
       String mqttPrefix) {
     if (currentTotalPower <= powerLimitWatts) {
       logger.debug(
@@ -135,8 +200,8 @@ public class BalancingService {
         powerLimitWatts);
 
     List<SheddableDevice> devicesToTurnOff =
-        allDevices.stream()
-            .filter(device -> SWITCHABLE_APPLIANCE.equals(device.getDeviceType()))
+        manageableDevices.stream()
+            .filter(device -> SWITCHABLE_APPLIANCE.equals(device.getDeviceType().name()))
             .filter(this::isDeviceOnlineAndOn)
             .map(
                 device -> {
@@ -198,10 +263,10 @@ public class BalancingService {
       double currentTotalPower,
       int powerLimitWatts,
       int powerOnMargin,
-      List<DeviceDto> allDevices) {
+      List<DeviceDto> manageableDevices) {
 
     List<DeviceDto> devicesToForceOn =
-        allDevices.stream()
+        manageableDevices.stream()
             .filter(
                 d ->
                     d.isPreventDowntime()
@@ -224,8 +289,8 @@ public class BalancingService {
 
     // 2. Find "sacrificial" devices that can be turned off
     List<DeviceDto> sacrificialDevices =
-        allDevices.stream()
-            .filter(d -> SWITCHABLE_APPLIANCE.equals(d.getDeviceType()))
+        manageableDevices.stream()
+            .filter(d -> SWITCHABLE_APPLIANCE.equals(d.getDeviceType().name()))
             .filter(this::isDeviceOnlineAndOn)
             .filter(
                 d -> !devicesToForceOn.contains(d)) // Don't sacrifice a device we want to turn on
@@ -314,7 +379,7 @@ public class BalancingService {
       int powerLimitWatts,
       int powerOnMargin,
       int overloadCooldownSeconds,
-      List<DeviceDto> allDevices,
+      List<DeviceDto> manageableDevices,
       String mqttPrefix) {
     LocalDateTime lastOverloadTime = lastOverloadTimeByMqttPrefix.get(mqttPrefix);
 
@@ -346,8 +411,8 @@ public class BalancingService {
 
     // Find devices disabled BY BALANCER (and not by user)
     List<DeviceDto> devicesToRestore =
-        allDevices.stream()
-            .filter(device -> SWITCHABLE_APPLIANCE.equals(device.getDeviceType()))
+        manageableDevices.stream()
+            .filter(device -> SWITCHABLE_APPLIANCE.equals(device.getDeviceType().name()))
             .filter(device -> isDeviceDisabledByBalancer(device.getId()))
             .filter(device -> !isDeviceOnlineAndOn(device)) // Ensure it's actually off
             .sorted(Comparator.comparing(DeviceDto::getPriority)) // 0, 1, 2...

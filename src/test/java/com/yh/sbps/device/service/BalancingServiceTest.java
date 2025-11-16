@@ -5,9 +5,7 @@ import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.yh.sbps.device.dto.DeviceDto;
-import com.yh.sbps.device.dto.SystemSettingsDto;
-import com.yh.sbps.device.dto.SystemStateDto;
+import com.yh.sbps.device.dto.*;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
 import com.yh.sbps.device.integration.ApiServiceClient;
@@ -21,7 +19,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -87,11 +84,9 @@ class BalancingServiceTest {
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 1200.0}");
 
     DeviceDto device1 =
-        new DeviceDto(
-            1L, "Device A", "mqtt_device_A", "SWITCHABLE_APPLIANCE", 1, 300, false, 0, 0, "user");
+        createDeviceDto(1L, "Device A", "mqtt_device_A", 1, 300, false, 0, 0, "user");
     DeviceDto device2 =
-        new DeviceDto(
-            2L, "Device B", "mqtt_device_B", "SWITCHABLE_APPLIANCE", 5, 300, false, 0, 0, "user");
+        createDeviceDto(2L, "Device B", "mqtt_device_B", 5, 300, false, 0, 0, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -127,14 +122,11 @@ class BalancingServiceTest {
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 1500.0}");
 
     DeviceDto deviceA =
-        new DeviceDto(
-            1L, "Device A", "mqtt_device_A", "SWITCHABLE_APPLIANCE", 1, 100, true, 60, 20, "user");
+        createDeviceDto(1L, "Device A", "mqtt_device_A", 1, 100, true, 60, 20, "user");
     DeviceDto deviceB =
-        new DeviceDto(
-            2L, "Device B", "mqtt_device_B", "SWITCHABLE_APPLIANCE", 5, 200, true, 60, 20, "user");
+        createDeviceDto(2L, "Device B", "mqtt_device_B", 5, 200, true, 60, 20, "user");
     DeviceDto deviceC =
-        new DeviceDto(
-            3L, "Device C", "mqtt_device_C", "SWITCHABLE_APPLIANCE", 10, 300, true, 60, 20, "user");
+        createDeviceDto(3L, "Device C", "mqtt_device_C", 10, 300, true, 60, 20, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -174,8 +166,7 @@ class BalancingServiceTest {
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 1200.0}");
 
     DeviceDto device1 =
-        new DeviceDto(
-            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 300, true, 60, 20, "username");
+        createDeviceDto(1L, "Device1", "device/1", 1, 300, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -206,14 +197,11 @@ class BalancingServiceTest {
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 300.0}");
 
     DeviceDto deviceA =
-        new DeviceDto(
-            1L, "Device A", "mqtt_device_A", "SWITCHABLE_APPLIANCE", 1, 200, true, 60, 20, "user");
+        createDeviceDto(1L, "Device A", "mqtt_device_A", 1, 200, true, 60, 20, "user");
     DeviceDto deviceB =
-        new DeviceDto(
-            2L, "Device B", "mqtt_device_B", "SWITCHABLE_APPLIANCE", 5, 200, true, 60, 20, "user");
+        createDeviceDto(2L, "Device B", "mqtt_device_B", 5, 200, true, 60, 20, "user");
     DeviceDto deviceC =
-        new DeviceDto(
-            3L, "Device C", "mqtt_device_C", "SWITCHABLE_APPLIANCE", 10, 400, true, 60, 20, "user");
+        createDeviceDto(3L, "Device C", "mqtt_device_C", 10, 400, true, 60, 20, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -253,8 +241,7 @@ class BalancingServiceTest {
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 500.0}");
 
     DeviceDto device1 =
-        new DeviceDto(
-            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200, true, 60, 20, "username");
+        createDeviceDto(1L, "Device1", "device/1", 1, 200, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -284,8 +271,7 @@ class BalancingServiceTest {
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 950.0}");
 
     DeviceDto device1 =
-        new DeviceDto(
-            1L, "Device1", "device/1", "SWITCHABLE_APPLIANCE", 1, 200, true, 60, 20, "username");
+        createDeviceDto(1L, "Device1", "device/1", 1, 200, true, 60, 20, "username");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -315,8 +301,7 @@ class BalancingServiceTest {
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 500.0}");
     DeviceDto deviceA =
-        new DeviceDto(
-            1L, "Device A", "mqtt_device_A", "SWITCHABLE_APPLIANCE", 1, 100, true, 60, 20, "user");
+        createDeviceDto(1L, "Device A", "mqtt_device_A", 1, 100, true, 60, 20, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -352,8 +337,7 @@ class BalancingServiceTest {
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 500.0}");
     DeviceDto deviceA =
-        new DeviceDto(
-            1L, "Device A", "mqtt_device_A", "SWITCHABLE_APPLIANCE", 1, 100, true, 60, 20, "user");
+        createDeviceDto(1L, "Device A", "mqtt_device_A", 1, 100, true, 60, 20, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -389,17 +373,7 @@ class BalancingServiceTest {
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 500.0}");
     DeviceDto deviceA =
-        new DeviceDto(
-            1L,
-            "Refrigerator",
-            "mqtt_device_A",
-            "SWITCHABLE_APPLIANCE",
-            0,
-            200,
-            true,
-            60,
-            0,
-            "user");
+        createDeviceDto(1L, "Refrigerator", "mqtt_device_A", 0, 200, true, 60, 0, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -434,20 +408,10 @@ class BalancingServiceTest {
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 900.0}"); // No margin
     DeviceDto deviceA =
-        new DeviceDto(
-            1L,
-            "Refrigerator",
-            "mqtt_device_A",
-            "SWITCHABLE_APPLIANCE",
-            0,
-            200,
-            true,
-            60,
-            0,
-            "user");
+        createDeviceDto(1L, "Refrigerator", "mqtt_device_A", 0, 200, true, 60, 0, "user");
+
     DeviceDto deviceB =
-        new DeviceDto(
-            2L, "Heater", "mqtt_device_B", "SWITCHABLE_APPLIANCE", 10, 300, false, 0, 0, "user");
+        createDeviceDto(2L, "Heater", "mqtt_device_B", 10, 300, false, 0, 0, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -480,29 +444,12 @@ class BalancingServiceTest {
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 900.0}"); // No margin
     DeviceDto deviceA =
-        new DeviceDto(
-            1L,
-            "Refrigerator",
-            "mqtt_device_A",
-            "SWITCHABLE_APPLIANCE",
-            0,
-            500,
-            true,
-            60,
-            0,
-            "user"); // Needs 500W
+        createDeviceDto(
+            1L, "Refrigerator", "mqtt_device_A", 0, 500, true, 60, 0, "user"); // Needs 500W
+
     DeviceDto deviceB =
-        new DeviceDto(
-            2L,
-            "Heater",
-            "mqtt_device_B",
-            "SWITCHABLE_APPLIANCE",
-            10,
-            300,
-            false,
-            0,
-            0,
-            "user"); // Can free 300W
+        createDeviceDto(
+            2L, "Heater", "mqtt_device_B", 10, 300, false, 0, 0, "user"); // Can free 300W
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -529,6 +476,8 @@ class BalancingServiceTest {
     verify(shellyService, never()).sendCommand("mqtt_device_A", true);
   }
 
+  // Helper methods
+
   @Test
   @DisplayName("Scenario 10: Prevent Downtime (Downtime not expired)")
   void testPreventDowntime_whenDowntimeNotExpired_thenNoAction() throws Exception {
@@ -536,17 +485,7 @@ class BalancingServiceTest {
     String mqttPrefix = "monitor/device1";
     JsonNode powerMonitorStatus = objectMapper.readTree("{\"apower\": 900.0}");
     DeviceDto deviceA =
-        new DeviceDto(
-            1L,
-            "Refrigerator",
-            "mqtt_device_A",
-            "SWITCHABLE_APPLIANCE",
-            0,
-            200,
-            true,
-            60,
-            0,
-            "user");
+        createDeviceDto(1L, "Refrigerator", "mqtt_device_A", 0, 200, true, 60, 0, "user");
 
     SystemSettingsDto settings = new SystemSettingsDto();
     settings.setPowerLimitWatts(1000);
@@ -570,8 +509,6 @@ class BalancingServiceTest {
     verify(shellyService, never()).sendCommand(anyString(), anyBoolean());
   }
 
-  // Helper methods
-
   private void mockDeviceOnlineAndOn(DeviceDto device) throws Exception {
     mockDeviceState(device, true, DeviceControlState.ENABLED, null);
   }
@@ -581,8 +518,7 @@ class BalancingServiceTest {
   }
 
   private void mockDeviceState(
-      DeviceDto device, boolean isOn, DeviceControlState controlState, LocalDateTime disabledAt)
-      throws Exception {
+      DeviceDto device, boolean isOn, DeviceControlState controlState, LocalDateTime disabledAt) {
     DeviceStatus deviceStatus = new DeviceStatus();
     deviceStatus.setDeviceId(device.getId());
     deviceStatus.setLastOnline(true);
@@ -596,5 +532,30 @@ class BalancingServiceTest {
     deviceStatus.setBalancerDisabledAt(disabledAt);
 
     when(stateCache.get(device.getId())).thenReturn(Optional.of(deviceStatus));
+  }
+
+  private DeviceDto createDeviceDto(
+      Long id,
+      String name,
+      String mqttPrefix,
+      Integer priority,
+      Integer wattage,
+      boolean preventDowntime,
+      Integer maxDowntimeMinutes,
+      Integer minUptimeMinutes,
+      String username) {
+    return new DeviceDto(
+        id,
+        name,
+        mqttPrefix,
+        DeviceType.SWITCHABLE_APPLIANCE,
+        DeviceProvider.SHELLY,
+        priority,
+        wattage,
+        preventDowntime,
+        false,
+        maxDowntimeMinutes,
+        minUptimeMinutes,
+        username);
   }
 }

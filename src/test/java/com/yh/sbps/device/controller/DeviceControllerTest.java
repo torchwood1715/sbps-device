@@ -8,13 +8,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.dto.DeviceProvider;
+import com.yh.sbps.device.dto.DeviceType;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
-import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.service.DeviceStatusService;
 import com.yh.sbps.device.service.ShellyService;
-import java.util.Optional;
-
 import com.yh.sbps.device.service.SystemStateCache;
+import java.util.Collections;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import java.util.Collections;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DeviceController Unit Tests")
@@ -51,10 +51,12 @@ class DeviceControllerTest {
             1L,
             "TestDevice",
             "test/device1",
-            "SWITCHABLE_APPLIANCE",
+            DeviceType.SWITCHABLE_APPLIANCE,
+            DeviceProvider.SHELLY,
             1,
             300,
             true,
+            false,
             60,
             20,
             "username");

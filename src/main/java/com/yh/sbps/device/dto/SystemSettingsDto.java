@@ -11,4 +11,6 @@ public class SystemSettingsDto {
   private Integer powerLimitWatts;
   private Integer powerOnMarginWatts;
   private Integer overloadCooldownSeconds;
+  private Integer powerSaveLimitWatts;
+  private boolean isVacationModeEnabled;
 }

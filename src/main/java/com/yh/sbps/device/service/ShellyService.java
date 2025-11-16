@@ -3,7 +3,9 @@ package com.yh.sbps.device.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.dto.DeviceProvider;
 import com.yh.sbps.device.dto.DeviceStatusUpdateDto;
+import com.yh.sbps.device.dto.DeviceType;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +21,6 @@ import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.integration.mqtt.support.MqttHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -27,7 +28,6 @@ import org.springframework.stereotype.Service;
 public class ShellyService {
 
   private static final Logger logger = LoggerFactory.getLogger(ShellyService.class);
-  private static final String DEVICE_TYPE_POWER_MONITOR = "POWER_MONITOR";
 
   private final MqttPahoMessageHandler mqttOutbound;
   private final MqttPahoClientFactory mqttClientFactory;
@@ -37,9 +37,10 @@ public class ShellyService {
   private final ApiServiceClient apiServiceClient;
   private final Map<String, MqttPahoMessageDrivenChannelAdapter> subscribedAdapters =
       new ConcurrentHashMap<>();
-  private final Map<String, Long> mqttPrefixToDeviceIdMap = new ConcurrentHashMap<>();
   private final Map<String, DeviceDto> deviceCache = new ConcurrentHashMap<>();
   private final DeviceRealtimeStateCache stateCache;
+  private final Map<DeviceProvider, MqttProviderStrategy> strategies;
+  private final SystemStateCache systemStateCache;
 
   /**
    * -- SETTER -- Setter for BalancingService to avoid circular dependency. Spring will inject this
@@ -53,7 +54,10 @@ public class ShellyService {
       ObjectMapper objectMapper,
       DeviceStatusService deviceStatusService,
       ApiServiceClient apiServiceClient,
-      DeviceRealtimeStateCache stateCache) {
+      DeviceRealtimeStateCache stateCache,
+      SystemStateCache systemStateCache,
+      ShellyMqttStrategy shellyStrategy,
+      TasmotaMqttStrategy tasmotaStrategy) {
     this.mqttClientFactory = mqttClientFactory;
     this.mqttInputChannel = mqttInputChannel;
     this.objectMapper = objectMapper;
@@ -61,6 +65,11 @@ public class ShellyService {
     this.apiServiceClient = apiServiceClient;
     this.mqttOutbound = new MqttPahoMessageHandler("shellyOutbound", mqttClientFactory);
     this.stateCache = stateCache;
+    this.systemStateCache = systemStateCache;
+    this.strategies =
+        Map.of(
+            DeviceProvider.SHELLY, shellyStrategy,
+            DeviceProvider.TASMOTA, tasmotaStrategy);
     mqttOutbound.setAsync(false);
     mqttOutbound.setConverter(new DefaultPahoMessageConverter());
     mqttOutbound.afterPropertiesSet();
@@ -72,60 +81,129 @@ public class ShellyService {
     String payload = String.valueOf(message.getPayload());
     logger.debug("MQTT IN: Topic={}, Payload={}", topic, payload);
     try {
-      if (topic.endsWith("/online")) {
-        String mqttPrefix = topic.substring(0, topic.lastIndexOf("/online"));
-        boolean online = Boolean.parseBoolean(payload);
-        handleOnlineStatus(mqttPrefix, online);
-      } else if (topic.endsWith("/status/switch:0")) {
-        String mqttPrefix = topic.substring(0, topic.indexOf("/status"));
-        JsonNode json = objectMapper.readTree(payload);
-        handleDeviceStatus(mqttPrefix, json);
-      } else if (topic.endsWith("/events/rpc")) {
-        String mqttPrefix = topic.substring(0, topic.indexOf("/events"));
-        JsonNode json = objectMapper.readTree(payload);
-        Long deviceId = getDeviceIdByMqttPrefix(mqttPrefix);
-        if (deviceId == null) return;
-        if (json.has("method")
-            && "NotifyStatus".equals(json.get("method").asText())
-            && json.has("params")
-            && json.get("params").has("switch:0")
-            && json.get("params").get("switch:0").has("apower")) {
-          logger.debug("Got power data from NotifyStatus (events/rpc) for {}", mqttPrefix);
-          JsonNode statusPayload = json.get("params").get("switch:0");
-          handleDeviceStatus(mqttPrefix, statusPayload);
-        }
-        deviceStatusService.updateEvent(deviceId, json, mqttPrefix);
+      DeviceDto device = findDeviceByTopic(topic);
+      if (device == null) {
+        logger.warn("No device found for topic: {}", topic);
+        return;
       }
+      MqttProviderStrategy strategy = strategies.get(device.getProvider());
+      if (strategy == null) {
+        logger.error("No MQTT strategy found for provider: {}", device.getProvider());
+        return;
+      }
+      if (strategy.handleOnlineStatus(topic, payload, device, this)) {
+        return;
+      }
+      JsonNode jsonPayload = objectMapper.readTree(payload);
+      strategy.handleDeviceStatus(topic, jsonPayload, device, this);
+      strategy.handleDeviceEvent(topic, jsonPayload, device, this);
     } catch (Exception e) {
-      logger.error("Error parsing MQTT payload", e);
+      logger.error("Error parsing MQTT payload for topic {}: {}", topic, e.getMessage());
     }
   }
 
-  private void handleOnlineStatus(String mqttPrefix, boolean online) {
-    DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
-    if (device != null) {
-      stateCache.updateOnline(device.getId(), online, mqttPrefix);
-      deviceStatusService.updateOnline(device.getId(), online, mqttPrefix);
-      if (device.getUsername() != null) {
-        apiServiceClient.notifyApiOfDeviceUpdate(
-            new DeviceStatusUpdateDto(device.getId(), device.getUsername(), online, null));
+  public void handleOnlineStatusInternal(DeviceDto device, boolean online) {
+    stateCache.updateOnline(device.getId(), online, device.getMqttPrefix());
+    deviceStatusService.updateOnline(device.getId(), online, device.getMqttPrefix());
+    if (device.getUsername() != null) {
+      apiServiceClient.notifyApiOfDeviceUpdate(
+          new DeviceStatusUpdateDto(device.getId(), device.getUsername(), online, null));
+    }
+
+    if (device.getDeviceType() == DeviceType.GRID_MONITOR) {
+      String monitorPrefix = findMonitorPrefixForDevice(device);
+      logger.info(
+          "GRID_MONITOR '{}' is now {}. Updating grid status for monitor {}.",
+          device.getName(),
+          online ? "ONLINE" : "OFFLINE",
+          monitorPrefix);
+      systemStateCache.updateGridStatus(monitorPrefix, online);
+    }
+  }
+
+  public void handleDeviceStatusInternal(DeviceDto device, JsonNode json) {
+    stateCache.updateStatus(device.getId(), json, device.getMqttPrefix());
+    String monitorPrefix = findMonitorPrefixForDevice(device);
+
+    if (device.getDeviceType() == DeviceType.GRID_MONITOR && json.has("voltage")) {
+      double voltage = json.get("voltage").asDouble(0.0);
+      boolean isGridAvailable = voltage > 100.0;
+
+      boolean oldStatus = systemStateCache.isGridAvailable(monitorPrefix);
+
+      if (isGridAvailable != oldStatus) {
+        logger.warn(
+            "GRID STATUS CHANGE! Monitor: {}. Voltage: {}. Grid available: {}",
+            monitorPrefix,
+            voltage,
+            isGridAvailable);
+        systemStateCache.updateGridStatus(monitorPrefix, isGridAvailable);
       }
     }
-  }
 
-  private void handleDeviceStatus(String mqttPrefix, JsonNode json) {
-    DeviceDto device = getDeviceByMqttPrefix(mqttPrefix);
-    if (device == null) return;
-    stateCache.updateStatus(device.getId(), json, mqttPrefix);
-    if (DEVICE_TYPE_POWER_MONITOR.equals(device.getDeviceType())) {
+    if (device.getDeviceType() == DeviceType.POWER_MONITOR) {
       if (balancingService != null) {
-        balancingService.balancePower(mqttPrefix, json);
+        balancingService.balancePower(device.getMqttPrefix(), json);
       } else {
         logger.warn("BalancingService not initialized. Cannot perform power balancing.");
       }
     }
 
-    performPostProcessing(mqttPrefix, json, device);
+    performPostProcessing(device.getMqttPrefix(), json, device);
+  }
+
+  public void handleDeviceEventInternal(DeviceDto device, JsonNode json) {
+    deviceStatusService.updateEvent(device.getId(), json, device.getMqttPrefix());
+  }
+
+  private DeviceDto findDeviceByTopic(String topic) {
+    String tasmotaPrefix = getTasmotaPrefixFromTopic(topic);
+    if (tasmotaPrefix != null) {
+      DeviceDto device = getDeviceByMqttPrefix(tasmotaPrefix);
+      if (device != null && device.getProvider() == DeviceProvider.TASMOTA) {
+        return device;
+      }
+    }
+
+    for (MqttProviderStrategy strategy : strategies.values()) {
+      if (strategy instanceof ShellyMqttStrategy) {
+        String prefix = strategy.getMqttPrefixFromTopic(topic);
+        if (prefix != null) {
+          DeviceDto device = getDeviceByMqttPrefix(prefix);
+          if (device != null) {
+            return device;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  private String getTasmotaPrefixFromTopic(String topic) {
+    String[] parts = topic.split("/");
+    if (parts.length > 1
+        && (parts[0].equals("tele") || parts[0].equals("stat") || parts[0].equals("cmnd"))) {
+      return parts[1]; // "tele/PREFIX/LWT" -> "PREFIX"
+    }
+    return null;
+  }
+
+  private String findMonitorPrefixForDevice(DeviceDto device) {
+    if (device.getDeviceType() == DeviceType.POWER_MONITOR
+        || device.getDeviceType() == DeviceType.GRID_MONITOR) {
+      return device.getMqttPrefix();
+    }
+
+    String monitorPrefix = systemStateCache.getDeviceToMonitorMap().get(device.getMqttPrefix());
+
+    if (monitorPrefix != null) {
+      return monitorPrefix;
+    }
+
+    logger.warn(
+        "No monitor prefix in deviceToMonitorMap for {}. Using device's own prefix as fallback.",
+        device.getMqttPrefix());
+    return device.getMqttPrefix();
   }
 
   @Async
@@ -144,82 +222,48 @@ public class ShellyService {
     }
   }
 
-  private Long getDeviceIdByMqttPrefix(String mqttPrefix) {
-    // Check cache first
-    Long deviceId = mqttPrefixToDeviceIdMap.get(mqttPrefix);
-    if (deviceId != null) {
-      return deviceId;
-    }
-
-    // If not in the cache, search through all devices
-    try {
-      List<DeviceDto> devices = apiServiceClient.getAllDevices();
-      for (DeviceDto device : devices) {
-        if (mqttPrefix.equals(device.getMqttPrefix())) {
-          mqttPrefixToDeviceIdMap.put(mqttPrefix, device.getId());
-          deviceCache.put(mqttPrefix, device); // Also cache the full device object
-          return device.getId();
-        }
-      }
-    } catch (Exception e) {
-      logger.error("Error finding device by MQTT prefix: {}", mqttPrefix, e);
-    }
-
-    logger.warn("No device found for MQTT prefix: {}", mqttPrefix);
-    return null;
-  }
-
-  /**
-   * Gets the full DeviceDto by MQTT prefix. Uses cache for efficiency.
-   *
-   * @param mqttPrefix The MQTT prefix
-   * @return DeviceDto or null if not found
-   */
   private DeviceDto getDeviceByMqttPrefix(String mqttPrefix) {
-    // Check cache first
     DeviceDto device = deviceCache.get(mqttPrefix);
     if (device != null) {
       return device;
     }
 
-    // If not in cache, search through all devices
+    logger.warn("Device with prefix {} not found in cache. Forcing API fetch.", mqttPrefix);
     try {
       List<DeviceDto> devices = apiServiceClient.getAllDevices();
       for (DeviceDto dev : devices) {
+        refreshDeviceCache(dev);
         if (mqttPrefix.equals(dev.getMqttPrefix())) {
-          deviceCache.put(mqttPrefix, dev);
-          mqttPrefixToDeviceIdMap.put(mqttPrefix, dev.getId());
-          return dev;
+          device = dev;
         }
       }
     } catch (Exception e) {
       logger.error("Error finding device by MQTT prefix: {}", mqttPrefix, e);
     }
 
-    logger.warn("No device found for MQTT prefix: {}", mqttPrefix);
-    return null;
+    if (device == null) {
+      logger.warn("No device found for MQTT prefix: {}", mqttPrefix);
+    }
+    return device;
   }
 
-  public void sendCommand(String deviceId, boolean on) {
+  public void sendCommand(String deviceMqttPrefix, boolean on) {
     try {
-      var params = objectMapper.createObjectNode();
-      params.put("id", 0);
-      params.put("on", on);
+      DeviceDto device = getDeviceByMqttPrefix(deviceMqttPrefix);
+      if (device == null) {
+        logger.error("Cannot send command, device not found for prefix: {}", deviceMqttPrefix);
+        return;
+      }
+      MqttProviderStrategy strategy = strategies.get(device.getProvider());
+      if (strategy == null) {
+        logger.error("Cannot send command, no strategy for provider: {}", device.getProvider());
+        return;
+      }
 
-      var payload = objectMapper.createObjectNode();
-      payload.put("id", 1);
-      payload.put("src", "device_service");
-      payload.put("method", "Switch.Set");
-      payload.set("params", params);
-
-      String jsonPayload = objectMapper.writeValueAsString(payload);
-      Message<String> mqttMsg =
-          MessageBuilder.withPayload(jsonPayload)
-              .setHeader(MqttHeaders.TOPIC, deviceId + "/rpc")
-              .build();
+      Message<String> mqttMsg = strategy.createToggleCommand(objectMapper, deviceMqttPrefix, on);
 
       mqttOutbound.handleMessage(mqttMsg);
-      logger.info("Sent toggle {} to [{}]", on, deviceId);
+      logger.info("Sent toggle {} to device {} ({})", on, device.getName(), device.getMqttPrefix());
 
     } catch (Exception e) {
       logger.error("Error sending MQTT command", e);
@@ -232,6 +276,15 @@ public class ShellyService {
       return;
     }
 
+    MqttProviderStrategy strategy = strategies.get(device.getProvider());
+    if (strategy == null) {
+      logger.error(
+          "Cannot subscribe, no strategy for provider: {} (Device: {})",
+          device.getProvider(),
+          device.getName());
+      return;
+    }
+
     String deviceKey = device.getMqttPrefix();
     if (subscribedAdapters.containsKey(deviceKey)) {
       logger.debug("Device {} is already subscribed, skipping", device.getName());
@@ -239,15 +292,11 @@ public class ShellyService {
     }
 
     try {
-      String[] topics = {
-        device.getMqttPrefix() + "/online",
-        device.getMqttPrefix() + "/events/rpc",
-        device.getMqttPrefix() + "/status/switch:0"
-      };
+      String[] topics = strategy.getSubscriptionTopics(device);
 
       MqttPahoMessageDrivenChannelAdapter adapter =
           new MqttPahoMessageDrivenChannelAdapter(
-              "shellyInbound_" + device.getId(), mqttClientFactory, topics);
+              "mqttInbound_" + device.getId(), mqttClientFactory, topics);
       adapter.setCompletionTimeout(5000);
       adapter.setConverter(new DefaultPahoMessageConverter());
       adapter.setQos(1);
@@ -256,6 +305,11 @@ public class ShellyService {
 
       subscribedAdapters.put(deviceKey, adapter);
       refreshDeviceCache(device);
+      logger.info(
+          "Subscribed to {} topics for device: {} ({})",
+          topics.length,
+          device.getName(),
+          device.getMqttPrefix());
     } catch (Exception e) {
       logger.error(
           "Failed to subscribe to MQTT topics for device: {} ({})",
@@ -283,7 +337,6 @@ public class ShellyService {
     }
 
     deviceCache.remove(mqttPrefix);
-    mqttPrefixToDeviceIdMap.remove(mqttPrefix);
   }
 
   public void refreshDeviceCache(DeviceDto device) {
@@ -291,8 +344,7 @@ public class ShellyService {
       return;
     }
     deviceCache.put(device.getMqttPrefix(), device);
-    mqttPrefixToDeviceIdMap.put(device.getMqttPrefix(), device.getId());
-    logger.info("Refreshed device cache for: {}", device.getName());
+    logger.debug("Refreshed device cache for: {}", device.getName());
   }
 
   public void unsubscribeForAllDevices() {

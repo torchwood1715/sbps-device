@@ -7,6 +7,8 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.dto.DeviceProvider;
+import com.yh.sbps.device.dto.DeviceType;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.repository.DeviceStatusRepository;
@@ -46,6 +48,8 @@ class ShellyServiceIntegrationTest {
 
   @MockitoBean private com.yh.sbps.device.config.security.JwtService jwtService;
 
+  @MockitoBean private SystemStateCache systemStateCache;
+
   @Autowired private ObjectMapper objectMapper;
 
   @BeforeEach
@@ -59,10 +63,12 @@ class ShellyServiceIntegrationTest {
             1L,
             "TestDevice1",
             "test/device1",
-            "SWITCHABLE_APPLIANCE",
+            DeviceType.SWITCHABLE_APPLIANCE,
+            DeviceProvider.SHELLY,
             1,
             300,
             true,
+            false,
             60,
             20,
             "username");
@@ -71,10 +77,12 @@ class ShellyServiceIntegrationTest {
             2L,
             "TestDevice2",
             "test/device2",
-            "SWITCHABLE_APPLIANCE",
+            DeviceType.SWITCHABLE_APPLIANCE,
+            DeviceProvider.SHELLY,
             2,
             400,
             true,
+            false,
             60,
             20,
             "username");
@@ -83,9 +91,11 @@ class ShellyServiceIntegrationTest {
             3L,
             "PowerMonitor",
             "test/monitor",
-            "POWER_MONITOR",
+            DeviceType.POWER_MONITOR,
+            DeviceProvider.SHELLY,
             null,
             null,
+            false,
             false,
             0,
             0,
@@ -176,7 +186,7 @@ class ShellyServiceIntegrationTest {
   }
 
   @Test
-  void testHandleMqttMessage_PowerMonitor_TriggersBalancing() throws Exception {
+  void testHandleMqttMessage_PowerMonitor_TriggersBalancing() {
     // Arrange
     String topic = "test/monitor/status/switch:0";
     String payload = "{\"id\":0,\"apower\":1200.0,\"voltage\":230.0}";

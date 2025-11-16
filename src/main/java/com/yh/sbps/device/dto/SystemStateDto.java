@@ -11,4 +11,5 @@ import lombok.*;
 public class SystemStateDto {
   private SystemSettingsDto systemSettings;
   private List<DeviceDto> devices;
+  private boolean isGridPowerAvailable;
 }
