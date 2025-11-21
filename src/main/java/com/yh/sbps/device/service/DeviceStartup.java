@@ -1,6 +1,7 @@
 package com.yh.sbps.device.service;
 
 import com.yh.sbps.device.dto.DeviceDto;
+import com.yh.sbps.device.dto.DeviceType;
 import com.yh.sbps.device.entity.DeviceStatus;
 import com.yh.sbps.device.integration.ApiServiceClient;
 import com.yh.sbps.device.repository.DeviceStatusRepository;
@@ -64,7 +65,7 @@ public class DeviceStartup implements SmartLifecycle {
         try {
           shellyService.subscribeForDevice(device);
           successCount++;
-          if ("POWER_MONITOR".equals(device.getDeviceType())) {
+          if (DeviceType.POWER_MONITOR == device.getDeviceType()) {
             logger.info(
                 "Found power monitor: {}. Initializing system state cache.", device.getName());
             systemStateCache.refreshState(device.getMqttPrefix());
