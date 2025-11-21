@@ -1,6 +1,7 @@
 package com.yh.sbps.device.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.yh.sbps.device.dto.BlackoutStatsDto;
 import com.yh.sbps.device.dto.DeviceDto;
 import com.yh.sbps.device.dto.DeviceStatusDto;
 import com.yh.sbps.device.entity.DeviceStatus.DeviceControlState;
@@ -167,5 +168,10 @@ public class DeviceController {
       logger.error("Error fetching all device statuses", e);
       return ResponseEntity.internalServerError().build();
     }
+  }
+
+  @GetMapping("/internal/blackout-stats")
+  public ResponseEntity<BlackoutStatsDto> getBlackoutStats(@RequestParam String mqttPrefix) {
+    return ResponseEntity.ok(systemStateCache.getBlackoutStats(mqttPrefix));
   }
 }
