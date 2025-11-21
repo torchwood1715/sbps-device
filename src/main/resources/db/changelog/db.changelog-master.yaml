@@ -1,3 +1,5 @@
 databaseChangeLog:
   - include:
       file: classpath:db/changelog/001-create-device-status-table.yaml
+  - include:
+      file: classpath:db/changelog/002-create-system-log-table.yaml

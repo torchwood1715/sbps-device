@@ -29,17 +29,20 @@ public class BalancingService {
   private final DeviceStatusService deviceStatusService;
   private final ApiServiceClient apiServiceClient;
   private final SystemStateCache systemStateCache;
+  private final SystemLogService systemLogService;
   @Setter private ShellyService shellyService; // Lazy injection
 
   public BalancingService(
       DeviceRealtimeStateCache stateCache,
       DeviceStatusService deviceStatusService,
       ApiServiceClient apiServiceClient,
-      SystemStateCache systemStateCache) {
+      SystemStateCache systemStateCache,
+      SystemLogService systemLogService) {
     this.deviceStatusService = deviceStatusService;
     this.apiServiceClient = apiServiceClient;
     this.systemStateCache = systemStateCache;
     this.stateCache = stateCache;
+    this.systemLogService = systemLogService;
   }
 
   public void balancePower(String mqttPrefix, JsonNode powerMonitorStatus) {
@@ -452,6 +455,7 @@ public class BalancingService {
     deviceStatusService.updateControlState(device.getId(), DeviceControlState.ENABLED);
     apiServiceClient.notifyBalancerAction(
         new BalancerActionDto(device.getId(), device.getName(), "ENABLED_BY_BALANCER"));
+    systemLogService.logEvent(device.getMqttPrefix(), "Turned ON " + device.getName());
   }
 
   private void turnOffDevice(DeviceDto device) {
@@ -461,6 +465,8 @@ public class BalancingService {
     deviceStatusService.updateControlState(device.getId(), DeviceControlState.DISABLED_BY_BALANCER);
     apiServiceClient.notifyBalancerAction(
         new BalancerActionDto(device.getId(), device.getName(), "DISABLED_BY_BALANCER"));
+    systemLogService.logEvent(
+        device.getMqttPrefix(), "Turned OFF " + device.getName() + " (Shedding load)");
   }
 
   private boolean hasDowntimeExpired(DeviceDto device) {

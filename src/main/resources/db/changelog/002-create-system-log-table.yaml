@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-system-log-table
+      author: system
+      changes:
+        - createTable:
+            tableName: system_logs
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: timestamp
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: mqtt_prefix
+                  type: VARCHAR(255)
+              - column:
+                  name: grid_online
+                  type: BOOLEAN
+              - column:
+                  name: total_load_watts
+                  type: DOUBLE
+              - column:
+                  name: device_statuses_json
+                  type: TEXT
+              - column:
+                  name: decision_event
+                  type: VARCHAR(512)

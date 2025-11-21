@@ -39,6 +39,8 @@ class BalancingServiceTest {
 
   @Mock private ApiServiceClient apiServiceClient;
 
+  @Mock private SystemLogService systemLogService;
+
   private BalancingService balancingService;
 
   private ObjectMapper objectMapper;
@@ -47,7 +49,8 @@ class BalancingServiceTest {
   void setUp() {
     objectMapper = new ObjectMapper();
     balancingService =
-        new BalancingService(stateCache, deviceStatusService, apiServiceClient, systemStateCache);
+        new BalancingService(
+            stateCache, deviceStatusService, apiServiceClient, systemStateCache, systemLogService);
     balancingService.setShellyService(shellyService);
   }
 
