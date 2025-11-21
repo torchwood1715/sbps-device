@@ -28,27 +28,22 @@ public class SystemStateCache {
 
   private static final Logger logger = LoggerFactory.getLogger(SystemStateCache.class);
   private final ApiServiceClient apiServiceClient;
-  private final ShellyService shellyService;
   private final DeviceRealtimeStateCache deviceRealtimeStateCache;
   private final ObjectMapper objectMapper = new ObjectMapper();
-
   // key - mqttPrefix of monitor
   @Getter private final Map<String, SystemStateDto> stateCache = new ConcurrentHashMap<>();
-
   // key - mqttPrefix of any device, value - mqttPrefix of monitor
   @Getter private final Map<String, String> deviceToMonitorMap = new ConcurrentHashMap<>();
-
   // key - mqttPrefix of monitor, value - grid status
   private final Map<String, Boolean> gridStatusCache = new ConcurrentHashMap<>();
-
+    // key - mqttPrefix of monitor, value - blackout sessions
   private final Map<String, BlackoutSession> blackoutSessions = new ConcurrentHashMap<>();
+  @Setter ShellyService shellyService; //circular dependency
 
   public SystemStateCache(
       ApiServiceClient apiServiceClient,
-      ShellyService shellyService,
       DeviceRealtimeStateCache deviceRealtimeStateCache) {
     this.apiServiceClient = apiServiceClient;
-    this.shellyService = shellyService;
     this.deviceRealtimeStateCache = deviceRealtimeStateCache;
   }
 

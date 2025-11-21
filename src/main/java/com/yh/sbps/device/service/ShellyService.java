@@ -40,13 +40,8 @@ public class ShellyService {
   private final Map<String, DeviceDto> deviceCache = new ConcurrentHashMap<>();
   private final DeviceRealtimeStateCache stateCache;
   private final Map<DeviceProvider, MqttProviderStrategy> strategies;
-  private final SystemStateCache systemStateCache;
-
-  /**
-   * -- SETTER -- Setter for BalancingService to avoid circular dependency. Spring will inject this
-   * after construction.
-   */
   @Setter private BalancingService balancingService; // Lazy injection to avoid circular dependency
+  @Setter private SystemStateCache systemStateCache; // Lazy injection to avoid circular dependency
 
   public ShellyService(
       MqttPahoClientFactory mqttClientFactory,
@@ -55,7 +50,6 @@ public class ShellyService {
       DeviceStatusService deviceStatusService,
       ApiServiceClient apiServiceClient,
       DeviceRealtimeStateCache stateCache,
-      SystemStateCache systemStateCache,
       ShellyMqttStrategy shellyStrategy,
       TasmotaMqttStrategy tasmotaStrategy) {
     this.mqttClientFactory = mqttClientFactory;
@@ -65,7 +59,6 @@ public class ShellyService {
     this.apiServiceClient = apiServiceClient;
     this.mqttOutbound = new MqttPahoMessageHandler("shellyOutbound", mqttClientFactory);
     this.stateCache = stateCache;
-    this.systemStateCache = systemStateCache;
     this.strategies =
         Map.of(
             DeviceProvider.SHELLY, shellyStrategy,
